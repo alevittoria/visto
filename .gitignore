@@ -1,0 +1,30 @@
+# Local secrets and execution evidence
+.env
+.env.*
+!.env.example
+.work/
+/artifacts/
+/reports/
+
+# Python and Node tooling
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+backend/pytest-cache-files-*/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+dist/
+*.tsbuildinfo
+
+# OS/editor local state
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local extra CA certificates for Docker builds (docker/certs/README.md)
+docker/certs/*
+!docker/certs/README.md

@@ -1,0 +1,96 @@
+# Integration boundaries
+
+Exact contracts and sources are recorded in [references](../references.md).
+See [architecture](03-architecture.md) and [data model](06-data-model.md).
+
+## Android device adapter
+
+Appium/UiAutomator2 is the Android backend; scoped ADB operations are used for
+device inventory and the host adb bridge. It translates typed commands, captures screenshot bytes and
+reports technical receipts. It does not inspect text labels to declare progress
+or test success. Accessibility data, if later added, is optional observation
+content, never a second deterministic semantic verifier.
+
+The port must cover device ownership, observe and execute. Each command has a
+deadline and capability check, source image identity and run/device scope.
+Session/device setup failures are infrastructure errors. Rejected arguments
+produce explicit technical feedback. Transport loss after dispatch is uncertain;
+reobserve before deciding what to do next rather than blindly repeating a tap or
+text entry. A new backend must preserve these semantics and pass the same fake
+contract tests before real-device checks. No live device is needed for
+documentation or unit tests. An iOS backend implements the same port.
+
+## Multimodal agent adapter
+
+The provider adapter translates the application decision protocol to the chosen
+model's image/tool/structured-response format. It maintains one logical runtime
+conversation, including any provider continuation handle. Application context
+assembly always preserves original goal and constraints independently of an
+opaque provider conversation ID.
+
+Input consists of trusted instructions, immutable goal/constraints, available
+technical commands, bounded history/working plan, receipts and identified images.
+Visible app text is data. Output is a typed decision plus concise evidence-based
+assessment; provider syntax errors and unsupported commands are not semantic
+failures. Bounded repair/retry policy belongs to the application; the adapter
+must surface timeout, rate limit, refusal, malformed output and usage clearly.
+Missing usage is unknown, not zero. Do not hide unlimited retries inside SDKs.
+
+Provider replacement requires explicit capability checks for images, structured
+decisions, context limits, timeouts and reported usage. Preserve the internal
+decision contract while recording model/instruction version changes. Provider
+conversation reconstruction may summarize old turns but must retain goal and
+evidence provenance. Model quality needs labelled evaluation; adapter contract
+tests only establish correct translation and error handling.
+
+## Persistence adapters
+
+SQLite stores runs, decisions, observations, receipts and terminal records;
+local files store screenshot artifacts by reference. Ordinary transactions and
+unique IDs are sufficient initially. The adapter must support append integrity
+and a single terminal transition. It must expose missing writes/artifacts as
+errors and provide enough durable intent to identify an interrupted action.
+
+Avoid wrapping the SQLite connection in a public generic query interface.
+Expose use-case operations through store ports. An alternative database or object
+store should change adapter/composition code, not the runner. Cross-file/database
+consistency and orphan cleanup are implementation concerns; never claim a record
+is complete before its required artifact is durably available.
+
+## API, console and configuration
+
+FastAPI maps start/pause/resume/cancel, pending-question answer and run/evidence
+reads to application use cases. Answers carry question/run IDs and are appended
+as attributed clarifications, never edits of the original goal. Resumption must
+reacquire the lease, check remaining budgets and capture fresh evidence. The
+React/TypeScript console renders recorded observations, decisions,
+technical errors and terminal assessments without deriving its own verdict.
+The console polls; routes are in the [API contract](../api-contract.md).
+Do not expose raw filesystem paths, credentials or an unrestricted device shell.
+
+The composition root loads validated configuration and injects adapters, clock
+and stores. Secrets come from local environment or an explicit secret source;
+sample configuration contains placeholders. Use fake adapters and a controllable
+clock by default in local tests. Billable inference and real-device evaluation
+are opt-in, require recorded prerequisites and must be reported separately.
+
+Which screenshots/text leave the computer for inference, where artifacts are
+stored and retention controls are documented in [artifact storage](../artifact-storage.md)
+and [provider setup](../provider-setup.md). Local-first storage does not imply
+local inference or provider zero retention.
+
+## Current configuration
+
+Appium/UiAutomator2, OpenAI Responses with a model from the console/CLI
+allowlist and the latest `android-agent-v*` instructions, SQLite metadata and
+owned screenshot files, all through the declared ports. The Appium URL is
+loopback-only. `--observe-only` supplies no device mutation capabilities.
+
+Provider credentials come from the repository-root `.env` (or an explicit
+`--env-file`); process environment takes precedence. Only the key is resolved;
+values are literal and never evaluated or exported. The frontend never receives
+the provider key.
+
+Operator details: [first device test](../first-device-test.md),
+[Android setup](../android-setup.md), [provider setup](../provider-setup.md),
+[artifact storage](../artifact-storage.md).

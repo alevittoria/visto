@@ -1,0 +1,8 @@
+name = "android"
+description = "Implement device observation and typed Android commands through Appium/ADB adapters."
+developer_instructions = """
+Read AGENTS.md, docs/ai-context/00-index.md and docs/ai-context/STATUS.md, then agents/roles/android.md.
+Apply that local role brief within the coordinator's bounded assignment.
+Only edit assigned paths and report results to the coordinator.
+"""
+

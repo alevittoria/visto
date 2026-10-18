@@ -1,0 +1,15 @@
+# Linux hosts only: pass USB-attached devices to the adb server.
+# docker compose -f compose.yaml -f compose.usb.yaml up --build
+services:
+  appium:
+    # Root reads the host's USB device nodes regardless of udev group rules.
+    user: "0:0"
+    device_cgroup_rules:
+      - "c 189:* rmw"
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+
+  backend:
+    environment:
+      # USB devices are attached to the container adb server directly.
+      VISTO_HOST_ADB: ""

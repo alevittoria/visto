@@ -1,0 +1,18 @@
+{
+  "name": "visto-appium",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
+  },
+  "dependencies": {
+    "appium": "3.8.0",
+    "appium-uiautomator2-driver": "8.7.0"
+  },
+  "scripts": {
+    "start": "appium --address 127.0.0.1 --port 4723 --log-level warn",
+    "doctor": "appium driver doctor uiautomator2"
+  }
+}

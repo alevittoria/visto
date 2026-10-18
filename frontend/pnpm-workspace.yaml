@@ -1,0 +1,4 @@
+nodeLinker: hoisted
+# Vite uses its native config loader and Rolldown. No lifecycle build is needed.
+allowBuilds:
+  esbuild: false

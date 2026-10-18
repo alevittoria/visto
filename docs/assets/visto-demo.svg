@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" width="960" height="540" role="img" aria-labelledby="title desc">
+  <title id="title">Visto run, animated</title>
+  <desc id="desc">Illustration of a Visto run against a fictional notes app. The AI reads a goal, observes each screenshot, taps, types, judges the effect of every action and concludes the test passed, citing the observations it used.</desc>
+  <style>
+    text { font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; }
+    .anim { animation-duration: 16s; animation-iteration-count: infinite; animation-timing-function: linear; }
+    .s1 { animation-name: s1; } .s2 { animation-name: s2; opacity: 0; }
+    .s3 { animation-name: s3; opacity: 0; } .s4 { animation-name: s4; opacity: 0; }
+    .c1 { animation-name: c1; opacity: 0; } .c2 { animation-name: c2; opacity: 0; }
+    .c3 { animation-name: c3; opacity: 0; } .c4 { animation-name: c4; opacity: 0; }
+    .c5 { animation-name: c5; opacity: 0; }
+    .t1 { animation-name: t1; opacity: 0; transform-origin: 241px 446px; transform-box: view-box; }
+    .t2 { animation-name: t2; opacity: 0; transform-origin: 250px 101px; transform-box: view-box; }
+    .caret { animation: blink 1s steps(1) infinite; }
+    @keyframes s1 { 0%, 24% { opacity: 1; } 25%, 100% { opacity: 0; } }
+    @keyframes s2 { 0%, 24% { opacity: 0; } 25%, 44% { opacity: 1; } 45%, 100% { opacity: 0; } }
+    @keyframes s3 { 0%, 44% { opacity: 0; } 45%, 71% { opacity: 1; } 72%, 100% { opacity: 0; } }
+    @keyframes s4 { 0%, 71% { opacity: 0; } 72%, 99% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes c1 { 0%, 4% { opacity: 0; } 7%, 97% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes c2 { 0%, 25% { opacity: 0; } 28%, 97% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes c3 { 0%, 45% { opacity: 0; } 48%, 97% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes c4 { 0%, 72% { opacity: 0; } 75%, 97% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes c5 { 0%, 83% { opacity: 0; } 86%, 97% { opacity: 1; } 100% { opacity: 0; } }
+    @keyframes t1 { 0%, 17% { opacity: 0; transform: scale(.4); } 19% { opacity: .9; transform: scale(1); } 24%, 100% { opacity: 0; transform: scale(1.6); } }
+    @keyframes t2 { 0%, 64% { opacity: 0; transform: scale(.4); } 66% { opacity: .9; transform: scale(1); } 71%, 100% { opacity: 0; transform: scale(1.6); } }
+    @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .anim { animation: none; }
+      .s1, .s2, .s3, .t1, .t2 { opacity: 0; }
+      .s4, .c1, .c2, .c3, .c4, .c5 { opacity: 1; }
+    }
+  </style>
+
+  <rect width="960" height="540" rx="18" fill="#0d1017"/>
+
+  <!-- Phone -->
+  <rect x="48" y="22" width="248" height="496" rx="34" fill="#232838" stroke="#3a4157" stroke-width="2"/>
+  <rect x="60" y="34" width="224" height="472" rx="24" fill="#f6f4ef"/>
+  <rect x="146" y="42" width="52" height="8" rx="4" fill="#232838"/>
+  <clipPath id="screen"><rect x="60" y="34" width="224" height="472" rx="24"/></clipPath>
+
+  <g clip-path="url(#screen)">
+    <!-- Screen 1: empty list -->
+    <g class="anim s1">
+      <rect x="60" y="34" width="224" height="472" fill="#f6f4ef"/>
+      <rect x="60" y="60" width="224" height="60" fill="#5b4bdb"/>
+      <text x="78" y="98" font-size="18" font-weight="700" fill="#fff">Acme Notes</text>
+      <circle cx="172" cy="270" r="30" fill="#e6e2f8"/>
+      <rect x="160" y="256" width="24" height="28" rx="3" fill="none" stroke="#5b4bdb" stroke-width="3"/>
+      <text x="172" y="326" font-size="14" fill="#6b6880" text-anchor="middle">No notes yet</text>
+      <circle cx="241" cy="446" r="24" fill="#5b4bdb"/>
+      <text x="241" y="455" font-size="26" fill="#fff" text-anchor="middle">+</text>
+    </g>
+    <!-- Screen 2: empty editor -->
+    <g class="anim s2">
+      <rect x="60" y="34" width="224" height="472" fill="#fff"/>
+      <rect x="60" y="60" width="224" height="60" fill="#5b4bdb"/>
+      <text x="78" y="98" font-size="18" font-weight="700" fill="#fff">New note</text>
+      <text x="250" y="100" font-size="20" fill="#fff" text-anchor="middle">✓</text>
+      <text x="78" y="160" font-size="20" fill="#b3b0c2">Title</text>
+      <rect x="78" y="172" width="188" height="1.5" fill="#d9d6e6"/>
+      <text x="78" y="204" font-size="14" fill="#c4c1d1">Start writing…</text>
+    </g>
+    <!-- Screen 3: typed title -->
+    <g class="anim s3">
+      <rect x="60" y="34" width="224" height="472" fill="#fff"/>
+      <rect x="60" y="60" width="224" height="60" fill="#5b4bdb"/>
+      <text x="78" y="98" font-size="18" font-weight="700" fill="#fff">New note</text>
+      <text x="250" y="100" font-size="20" fill="#fff" text-anchor="middle">✓</text>
+      <text x="78" y="160" font-size="20" font-weight="600" fill="#22202e">Groceries</text>
+      <rect class="caret" x="167" y="142" width="2" height="24" fill="#5b4bdb"/>
+      <rect x="78" y="172" width="188" height="1.5" fill="#5b4bdb"/>
+      <text x="78" y="204" font-size="14" fill="#c4c1d1">Start writing…</text>
+    </g>
+    <!-- Screen 4: note in list -->
+    <g class="anim s4">
+      <rect x="60" y="34" width="224" height="472" fill="#f6f4ef"/>
+      <rect x="60" y="60" width="224" height="60" fill="#5b4bdb"/>
+      <text x="78" y="98" font-size="18" font-weight="700" fill="#fff">Acme Notes</text>
+      <rect x="74" y="136" width="196" height="64" rx="12" fill="#fff" stroke="#e3e0ee"/>
+      <text x="90" y="164" font-size="16" font-weight="600" fill="#22202e">Groceries</text>
+      <text x="90" y="186" font-size="12" fill="#8a879c">just now</text>
+      <circle cx="241" cy="446" r="24" fill="#5b4bdb"/>
+      <text x="241" y="455" font-size="26" fill="#fff" text-anchor="middle">+</text>
+    </g>
+    <!-- Tap indicators -->
+    <circle class="anim t1" cx="241" cy="446" r="30" fill="none" stroke="#ffb547" stroke-width="5"/>
+    <circle class="anim t2" cx="250" cy="94" r="22" fill="none" stroke="#ffb547" stroke-width="5"/>
+  </g>
+
+  <!-- Conversation panel -->
+  <text x="340" y="44" font-size="12" font-weight="700" letter-spacing="1.5" fill="#7d86a3">GOAL · PRESERVED FOR THE WHOLE RUN</text>
+  <rect x="340" y="54" width="584" height="46" rx="10" fill="#171b26" stroke="#5b4bdb"/>
+  <text x="358" y="83" font-size="15" fill="#e8eaf2">Create a note titled “Groceries” and check that it shows up in the list.</text>
+
+  <g class="anim c1">
+    <rect x="340" y="114" width="584" height="70" rx="10" fill="#171b26"/>
+    <text x="358" y="138" font-size="12" font-weight="700" fill="#8f7cff" class="mono">#1  OBSERVE → TAP (241, 446)</text>
+    <text x="358" y="164" font-size="14" fill="#c9cddb">Empty note list with an add button in the bottom-right corner.</text>
+  </g>
+  <g class="anim c2">
+    <rect x="340" y="194" width="584" height="70" rx="10" fill="#171b26"/>
+    <text x="358" y="218" font-size="12" font-weight="700" fill="#8f7cff" class="mono">#2  JUDGE ✓ EDITOR OPENED → TYPE "Groceries"</text>
+    <text x="358" y="244" font-size="14" fill="#c9cddb">Previous tap worked: a blank editor with a focused title field.</text>
+  </g>
+  <g class="anim c3">
+    <rect x="340" y="274" width="584" height="70" rx="10" fill="#171b26"/>
+    <text x="358" y="298" font-size="12" font-weight="700" fill="#8f7cff" class="mono">#3  JUDGE ✓ TITLE ENTERED → TAP SAVE (250, 94)</text>
+    <text x="358" y="324" font-size="14" fill="#c9cddb">The title reads “Groceries”. Next: save with the check mark.</text>
+  </g>
+  <g class="anim c4">
+    <rect x="340" y="354" width="584" height="70" rx="10" fill="#171b26"/>
+    <text x="358" y="378" font-size="12" font-weight="700" fill="#8f7cff" class="mono">#4  JUDGE ✓ BACK ON THE LIST → CONCLUDE</text>
+    <text x="358" y="404" font-size="14" fill="#c9cddb">A “Groceries” card dated “just now” is now the first list item.</text>
+  </g>
+  <g class="anim c5">
+    <rect x="340" y="438" width="584" height="80" rx="10" fill="#10261c" stroke="#2fbf71"/>
+    <rect x="358" y="454" width="74" height="24" rx="12" fill="#2fbf71"/>
+    <text x="395" y="471" font-size="12" font-weight="800" fill="#06150d" text-anchor="middle">PASSED</text>
+    <text x="446" y="471" font-size="14" font-weight="600" fill="#e8eaf2">Goal achieved · evidence: observations #2, #3, #4</text>
+    <text x="358" y="500" font-size="13" fill="#9fd9b8">The new note was created and appears in the list as required.</text>
+  </g>
+</svg>

@@ -1,0 +1,8 @@
+name = "backend"
+description = "Implement Python use cases, persistence/API adapters and composition for assigned slices."
+developer_instructions = """
+Read AGENTS.md, docs/ai-context/00-index.md and docs/ai-context/STATUS.md, then agents/roles/backend.md.
+Apply that local role brief within the coordinator's bounded assignment.
+Only edit assigned paths and report results to the coordinator.
+"""
+

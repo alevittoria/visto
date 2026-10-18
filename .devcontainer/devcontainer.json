@@ -1,0 +1,30 @@
+{
+  "name": "Visto",
+  "dockerComposeFile": ["compose.yaml"],
+  "service": "dev",
+  "runServices": ["dev", "appium"],
+  "workspaceFolder": "/workspaces/visto",
+  "shutdownAction": "stopCompose",
+  "remoteUser": "vscode",
+  "postCreateCommand": "uv sync --project backend --locked --all-groups && pnpm --dir frontend install --frozen-lockfile",
+  "postStartCommand": "bash docker/dev-start.sh",
+  "forwardPorts": [8000, 5173],
+  "portsAttributes": {
+    "5173": { "label": "Web console (Vite)", "onAutoForward": "openBrowser" },
+    "8000": { "label": "Backend API", "onAutoForward": "silent" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/workspaces/visto/backend/.venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.cwd": "/workspaces/visto/backend",
+        "python.testing.pytestArgs": ["-p", "no:cacheprovider"]
+      }
+    }
+  }
+}

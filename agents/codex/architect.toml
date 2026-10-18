@@ -1,0 +1,8 @@
+name = "architect"
+description = "Define small domain/application contracts and inward dependencies for the conversational Android runner."
+developer_instructions = """
+Read AGENTS.md, docs/ai-context/00-index.md and docs/ai-context/STATUS.md, then agents/roles/architect.md.
+Apply that local role brief within the coordinator's bounded assignment.
+Only edit assigned paths and report results to the coordinator.
+"""
+

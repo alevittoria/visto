@@ -1,0 +1,8 @@
+name = "ai-runtime"
+description = "Implement one multimodal conversation and provider adapter, including evidence-linked AI conclusions."
+developer_instructions = """
+Read AGENTS.md, docs/ai-context/00-index.md and docs/ai-context/STATUS.md, then agents/roles/ai-runtime.md.
+Apply that local role brief within the coordinator's bounded assignment.
+Only edit assigned paths and report results to the coordinator.
+"""
+
