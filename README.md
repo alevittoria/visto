@@ -92,7 +92,7 @@ You need Docker (Compose v2), an OpenAI API key with access to a vision model,
 and an Android device with USB or wireless debugging enabled.
 
 ```sh
-git clone https://github.com/<your-org>/visto.git
+git clone https://github.com/alevittoria/visto.git
 cd visto
 cp .env.example .env          # set OPENAI_API_KEY
 docker compose up --build -d
