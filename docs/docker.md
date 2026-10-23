@@ -4,6 +4,13 @@ The whole tool runs from Docker with no host Python, Node, Appium, JDK or Androi
 SDK. Only Docker with Compose v2 (or Docker Desktop) is needed.
 A VS Code dev container provides the same pinned toolchain for development.
 
+The Compose stack and the dev container drive Android only. A Linux container
+cannot reach Xcode, `simctl` or a USB-attached iPhone, and there is no iOS
+equivalent of the host adb bridge below. To see iOS, start the backend natively
+on macOS with a local Appium; see [iOS setup](ios-setup.md) and
+[local development](local-development.md#what-each-mode-can-drive). Under Docker
+the device list shows a note that `xcrun` was not found rather than iOS devices.
+
 ## Services
 
 | Service | Image | Role |

@@ -14,7 +14,8 @@ from uuid import uuid4
 import pytest
 
 from visto.adapters.android import AppiumDevice
-from visto.application.ports import PortError
+from visto.adapters.appium.wire import CommandError
+from visto.application.ports import OperatorActionRequired, PortError
 from visto.domain.commands import Back, Enter, Home, LongPress, Swipe, Tap, TypeText
 from visto.domain.models import Action, ArtifactRef, Observation, ReceiptStatus
 
@@ -424,5 +425,27 @@ def test_rotation_during_capture_is_failure(tmp_path):
         with pytest.raises(PortError, match="rotation changed"):
             await device.observe(lease, 1000)
         await device.release(lease)
+
+    asyncio.run(scenario())
+
+
+def test_appium_without_the_android_sdk_tells_the_operator_what_to_fix(tmp_path):
+    class Wire(FakeWire):
+        def request(self, method, path, body, timeout_ms):
+            # Wording of appium-adb when the Appium process has no SDK path.
+            raise CommandError(
+                "appium: command failure",
+                "An unknown server-side error occurred while processing the command. "
+                "Original error: Neither ANDROID_HOME nor ANDROID_SDK_ROOT environment "
+                "variable was exported.",
+            )
+
+    async def scenario():
+        device = AppiumDevice("http://unused", tmp_path, wire=Wire())
+        with pytest.raises(OperatorActionRequired) as error:
+            await device.acquire("run", "device-A", 1000)
+        message = str(error.value)
+        assert message.startswith("android: ") and "ANDROID_HOME" in message
+        assert "unknown server-side error" not in message
 
     asyncio.run(scenario())

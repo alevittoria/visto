@@ -14,7 +14,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from visto.adapters.ai import AUDIO_EXTENSIONS, TRANSCRIPTION_MODEL, transcribe
-from visto.adapters.android.inventory import AttachedDevice, InventoryUnavailable
+from visto.adapters.devices import AttachedDevice, InventoryUnavailable, Platform
 from visto.adapters.pricing import PriceSheet, SQLitePriceStore
 from visto.adapters.storage import LocalArtifactStore, SQLiteRunStore
 from visto.adapters.storage.codec import loads
@@ -90,6 +90,9 @@ class ExecutionService:
         runtime_factory: Callable = build_runtime,
         key_resolver: Callable = resolve_api_key,
         device_lister: Callable[[], Awaitable[tuple[AttachedDevice, ...]]] | None = None,
+        ios_device_lister: Callable[[], Awaitable[tuple[AttachedDevice, ...]]] | None = None,
+        ios_physical_device_lister: Callable[[], Awaitable[tuple[AttachedDevice, ...]]]
+        | None = None,
         device_connector: Callable[[], Awaitable[tuple[str, ...]]] | None = None,
         transcriber: Callable[[str, bytes, str], Awaitable[str]] = transcribe,
     ):
@@ -97,6 +100,8 @@ class ExecutionService:
         self.runtime_factory = runtime_factory
         self.key_resolver = key_resolver
         self.device_lister = device_lister
+        self.ios_device_lister = ios_device_lister
+        self.ios_physical_device_lister = ios_physical_device_lister
         # Optional: bridges host USB devices before an explicit refresh lists them.
         self.device_connector = device_connector
         self.transcriber = transcriber
@@ -146,6 +151,13 @@ class ExecutionService:
             await self.refresh_prices()
             await asyncio.sleep(PRICE_CHECK_INTERVAL_S)
 
+    def platforms(self) -> list[str]:
+        """Platforms whose device sources are configured in this process."""
+        ios = self.ios_device_lister or self.ios_physical_device_lister
+        return [
+            p.value for p, on in ((Platform.ANDROID, self.device_lister), (Platform.IOS, ios)) if on
+        ]
+
     def readiness(self):
         error = None
         key = ""
@@ -169,6 +181,7 @@ class ExecutionService:
             "appium_url": self.settings.appium_url,
             "device_selection": "manual",
             "devices": [],
+            "platforms": self.platforms(),
             "active_run_id": self.active.run_id if self.active else None,
             "cleanup_attention_run_ids": sorted(self.cleanup_failures),
             "execution_available": configured and self.active is None and not self.closing,
@@ -208,33 +221,77 @@ class ExecutionService:
         `connect` (explicit operator refresh) first bridges host USB devices, which
         may restart adbd on a phone, so it is skipped while a run owns a device.
         """
-        if self.device_lister is None:
+        listers = [
+            lister
+            for lister in (
+                self.device_lister,
+                self.ios_device_lister,
+                self.ios_physical_device_lister,
+            )
+            if lister
+        ]
+        if not listers:
             return {"available": False, "devices": [], "error": "Device listing is not configured"}
         notes: tuple[str, ...] = ()
-        async with self.inventory_lock:  # One adb client process at a time.
+
+        async def connect_step():  # Called with the inventory lock held.
+            nonlocal notes
             if connect and self.device_connector is not None:
                 if self.active is not None:
                     notes = ("Host USB devices are not connected while a run is active.",)
                 else:
                     notes = await self.device_connector()
+
+        async def adb_source():
+            async with self.inventory_lock:  # One adb client process at a time.
+                await connect_step()
+                return await self.device_lister()
+
+        async def listed(source):
             try:
-                attached = await self.device_lister()
+                return await source()
             except InventoryUnavailable as error:
-                return {
-                    "available": False,
-                    "devices": [],
-                    "error": str(error),
-                    "notes": list(notes),
-                }
+                return error
+
+        if not self.device_lister:
+            async with self.inventory_lock:
+                await connect_step()
+        # Sources run concurrently so the worst case is the slowest one, not their sum.
+        sources = [
+            source
+            for source, lister in (
+                (adb_source, self.device_lister),
+                (self.ios_device_lister, self.ios_device_lister),
+                (self.ios_physical_device_lister, self.ios_physical_device_lister),
+            )
+            if lister
+        ]
+        results = await asyncio.gather(*(listed(source) for source in sources))
+        attached: list[AttachedDevice] = []
+        problems: list[str] = []
+        for result in results:
+            if isinstance(result, InventoryUnavailable):
+                problems.append(str(result))
+            else:
+                attached.extend(result)
+        if len(problems) == len(sources):
+            return {
+                "available": False,
+                "devices": [],
+                "error": "; ".join(dict.fromkeys(problems)),
+                "notes": list(notes),
+            }
+        notes = (*notes, *dict.fromkeys(problems))  # A shared cause is noted once.
         return {
             "available": True,
             "devices": [
                 {
                     "serial": item.serial,
+                    "platform": item.platform.value,
                     "state": item.state,
                     "model": item.model,
                     "product": item.product,
-                    "selectable": item.state == "device",
+                    "selectable": item.selectable,
                 }
                 for item in attached
             ],
@@ -327,6 +384,7 @@ class ExecutionService:
                     model=model,
                     limits=RunLimits(**request.limits.model_dump()),
                     lease_directory=self.settings.lease_directory,
+                    platform=request.platform,
                     **({"capabilities": ()} if request.observe_only else {}),
                 )
                 control = MutableRunControl()

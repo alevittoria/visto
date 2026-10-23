@@ -15,6 +15,7 @@ from visto.adapters.api.execution import LOOPBACK_HOSTS
 from visto.adapters.api.execution import router as execution_router
 from visto.adapters.api.health import router as health_router
 from visto.adapters.api.service import ExecutionService, WebSettings
+from visto.adapters.ios.inventory import find_xcrun, list_physical, list_simulators
 from visto.adapters.pricing import fetch_prices
 from visto.application.ports import PortError
 
@@ -33,6 +34,10 @@ def create_app(service: ExecutionService | None = None) -> FastAPI:
         execution = ExecutionService(default_settings())
         adb = find_adb()
         execution.device_lister = lambda: list_devices(adb)
+        xcrun = find_xcrun()
+        # Two independent iOS sources: one failing must not hide the other's devices.
+        execution.ios_device_lister = lambda: list_simulators(xcrun)
+        execution.ios_physical_device_lister = lambda: list_physical(xcrun)
         # Docker Desktop: the host adb server owns USB phones (docs/docker.md).
         host = HostAdb.parse(os.environ.get("VISTO_HOST_ADB"))
         if host is not None:

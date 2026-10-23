@@ -20,6 +20,18 @@ text entry. A new backend must preserve these semantics and pass the same fake
 contract tests before real-device checks. No live device is needed for
 documentation or unit tests. An iOS backend implements the same port.
 
+## iOS device adapter
+
+The iOS adapter implements the same port over Appium's XCUITest driver and
+WebDriverAgent, sharing the Appium session core with Android. It runs only with
+the backend started natively on macOS; the containers stay Android-only. iOS
+inventory uses fixed, read-only `xcrun simctl` and `xcrun devicectl` commands.
+Visto never boots a simulator, builds WebDriverAgent or shuts a device down; the
+XCUITest driver will boot or build if a session targets something not ready (see
+`VISTO_IOS_PREBUILT_WDA`, `VISTO_IOS_WDA_DERIVED_DATA` and the pre-step). Signing values come from `VISTO_IOS_*` environment variables.
+Local checks only: no simulator or phone run is recorded. See
+[iOS setup](../ios-setup.md).
+
 ## Multimodal agent adapter
 
 The provider adapter translates the application decision protocol to the chosen
@@ -30,6 +42,9 @@ opaque provider conversation ID.
 
 Input consists of trusted instructions, immutable goal/constraints, available
 technical commands, bounded history/working plan, receipts and identified images.
+Images over the provider's size limits are downscaled in the adapter, which maps
+coordinates between the sent image and the source screenshot in both directions;
+the rest of the system works in source-screenshot pixels.
 Visible app text is data. Output is a typed decision plus concise evidence-based
 assessment; provider syntax errors and unsupported commands are not semantic
 failures. Bounded repair/retry policy belongs to the application; the adapter
@@ -92,5 +107,5 @@ values are literal and never evaluated or exported. The frontend never receives
 the provider key.
 
 Operator details: [first device test](../first-device-test.md),
-[Android setup](../android-setup.md), [provider setup](../provider-setup.md),
+[Android setup](../android-setup.md), [iOS setup](../ios-setup.md), [provider setup](../provider-setup.md),
 [artifact storage](../artifact-storage.md).

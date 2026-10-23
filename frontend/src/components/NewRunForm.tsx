@@ -5,7 +5,7 @@ import { DeviceSelect } from './DeviceSelect.tsx';
 import { DictateButton } from './DictateButton.tsx';
 import { appendTranscript } from '../speech.ts';
 import type { Readiness } from '../console.ts';
-import { buildRunRequest, displayLimit, LIMIT_FIELDS, TEXT_LIMITS } from '../form.ts';
+import { buildRunRequest, displayLimit, LIMIT_FIELDS, pickDevice, TEXT_LIMITS } from '../form.ts';
 import type { CreateRunRequest, FormErrors, RunForm } from '../form.ts';
 
 interface Props {
@@ -58,8 +58,8 @@ export function NewRunForm({ form, onChange, readiness, connected, submitting, u
 
       <div className="field">
         <label htmlFor="device">Device</label>
-        <DeviceSelect value={form.deviceId} onSelect={(serial) => set('deviceId', serial)}
-          onLoaded={(devices) => onChange((current) => ({ ...current, deviceId: reconcileDevice(current.deviceId, devices) }))}
+        <DeviceSelect value={form.deviceId} onSelect={(serial, devices) => onChange((current) => pickDevice(current, serial, devices))}
+          onLoaded={(devices) => onChange((current) => pickDevice(current, reconcileDevice(current.deviceId, devices), devices))}
           invalid={!!errors.deviceId} describedBy={describe('device', !!errors.deviceId, 'device-status')} />
         {errors.deviceId && <p id="device-error" className="error-text">{errors.deviceId}</p>}
       </div>

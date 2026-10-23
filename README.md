@@ -12,7 +12,7 @@ No selectors. No page objects. No brittle scripts that break when a button moves
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Status: work in progress](https://img.shields.io/badge/status-work%20in%20progress-orange.svg)
 ![Android: supported](https://img.shields.io/badge/Android-supported-2fbf71.svg)
-![iOS: help wanted](https://img.shields.io/badge/iOS-help%20wanted-lightgrey.svg)
+![iOS: implemented, unverified](https://img.shields.io/badge/iOS-implemented%2C%20unverified-lightgrey.svg)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-8f7cff.svg)](CONTRIBUTING.md)
 
 <img src="docs/assets/visto-demo.svg" alt="Animated example: given the goal 'create a note titled Groceries and check that it shows up in the list', the AI observes the screen, taps the add button, types the title, saves, judges each effect and concludes PASSED citing its observations" width="900">
@@ -23,7 +23,8 @@ No selectors. No page objects. No brittle scripts that break when a button moves
 
 > [!WARNING]
 > **Visto is a work in progress.** Android works end to end today: CLI, web
-> console, Docker setup. **iOS is not implemented yet.** APIs, prompts and storage
+> console, Docker setup. **iOS is implemented but has only had local checks** (see
+> [platform support](#platform-support)). APIs, prompts and storage
 > formats may still change. Early testers and contributors are very welcome.
 
 ## Why Visto?
@@ -80,16 +81,18 @@ flowchart LR
 | Platform | Status | Device backend |
 |---|---|---|
 | **Android** | ✅ Working (8.0 / API 26+, USB or wireless debugging) | Appium + UiAutomator2, adb |
-| **iOS** | 🚧 Not implemented yet. [Help wanted!](#roadmap) | Planned: Appium + XCUITest |
+| **iOS** | 🚧 Implemented, local checks only: nothing has been run against a simulator or a device yet. Native macOS only; see [iOS setup](docs/ios-setup.md) | Appium + XCUITest, WebDriverAgent |
 
 The core is platform-agnostic by design. The domain and application layers know
-about *observations* and *commands*, not about Android. Adding iOS means writing
-a new device adapter; the AI loop stays the same.
+about *observations* and *commands*, not about Android. The iOS adapter is a second
+device adapter behind the same port; the AI loop stays the same. The physical-device
+path is code-complete but unobserved.
 
 ## Quick start (Docker)
 
 You need Docker (Compose v2), an OpenAI API key with access to a vision model,
-and an Android device with USB or wireless debugging enabled.
+and an Android device with USB or wireless debugging enabled. (iOS needs a native
+macOS setup instead of Docker: see [iOS setup](docs/ios-setup.md).)
 
 ```sh
 git clone https://github.com/<your-org>/visto.git
@@ -118,7 +121,7 @@ Open <http://localhost:8080>, pick your device, describe the goal and start the 
             React console ─┐        ┌─ CLI
                            ▼        ▼
 ┌──────────────────── FastAPI / runner ─────────────────────┐
-│  adapters   AI provider · Android (Appium/adb) · SQLite   │
+│  adapters   AI provider · Android + iOS (Appium) · SQLite │
 │             screenshots · reports · pricing               │
 │  ───────────────────────────── ▲ ──────────────────────── │
 │  application   one conversational run loop, budgets,      │
@@ -147,7 +150,8 @@ More: [architecture](docs/ai-context/03-architecture.md) ·
 - [x] Terminal CLI, web console, HTML/JSON reports
 - [x] Docker stack and dev container
 - [x] Voice dictation, run statistics and cost estimates
-- [ ] **iOS device adapter** (Appium/XCUITest), simulators and real devices
+- [x] iOS device adapter (Appium/XCUITest), implemented with local checks only
+- [ ] **Verify iOS** against real simulators and devices
 - [ ] Additional AI providers (only OpenAI is wired today)
 - [ ] Labelled evaluation suite to measure judgement quality across models
 - [ ] CI-friendly headless mode and exit codes for pipelines
@@ -156,7 +160,7 @@ More: [architecture](docs/ai-context/03-architecture.md) ·
 
 ## Contributing
 
-**Contributions are very welcome**, and iOS support is the most wanted. Other good
+**Contributions are very welcome**, and verifying iOS on simulators and devices is the most wanted. Other good
 first areas: new AI providers, console UX, documentation, real-world test
 scenarios built on fictional sample apps, and an actual screen recording for this
 README.

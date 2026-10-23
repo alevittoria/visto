@@ -3,13 +3,21 @@
 import asyncio
 import hashlib
 import json
+import tomllib
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
-from visto.adapters.ai import INSTRUCTION_VERSION, OpenAIAgent
+from visto.adapters.ai import (
+    INSTRUCTION_VERSION,
+    INSTRUCTION_VERSIONS,
+    OpenAIAgent,
+    load_instructions,
+)
 from visto.adapters.ai.openai import history_data
+from visto.adapters.devices import Platform
 from visto.application.context import AgentContext, PresentedImage
 from visto.application.ports import PortError
 from visto.domain.commands import Back, CommandKind, Enter, Home, LongPress
@@ -23,6 +31,8 @@ from visto.domain.models import (
     RunLimits,
 )
 from visto.domain.run import Run
+
+ANDROID_INSTRUCTIONS_SHA256 = "903f4338c1e8bdaeb099d0b95e2ba4273371e8b1c0e30fd77f3669acb0cdec21"
 
 
 @pytest.fixture
@@ -185,3 +195,32 @@ def test_long_press_and_enter_decode_from_provider(context, command, expected):
         OpenAIAgent("secret", transport=lambda *a: response(value)).decide(context, 1000)
     )
     assert reply.decision.next.command == expected
+
+
+def test_android_instructions_are_byte_identical_after_refactoring():
+    rendered = load_instructions(Platform.ANDROID)
+    assert hashlib.sha256(rendered.encode()).hexdigest() == ANDROID_INSTRUCTIONS_SHA256
+
+
+def test_ios_instructions_name_the_platform_and_its_navigation_reality():
+    text = load_instructions(Platform.IOS)
+    assert "iOS test agent" in text and "Android" not in text
+    assert "may not navigate" in text and "home screen" in text
+    assert "does not clear what the field already held, so clear any existing" in text
+    assert "replacing what it held" not in text
+    assert "{{" not in text and "<!--" not in text
+
+
+def test_identity_mismatch_rejects_the_other_platform_version(context):
+    agent = OpenAIAgent("secret", platform=Platform.IOS, transport=lambda *a: None)
+    with pytest.raises(PortError, match="identity"):
+        asyncio.run(agent.decide(context, 1000))
+
+
+def test_every_prompt_resource_the_loader_reads_is_packaged_in_the_wheel():
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    config = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    included = config["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
+    needed = ["agent-core.md", *(f"{INSTRUCTION_VERSIONS[p]}.md" for p in Platform)]
+    for name in needed:
+        assert included.get(f"prompts/{name}") == f"visto/prompts/{name}"

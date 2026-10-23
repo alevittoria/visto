@@ -15,15 +15,23 @@ key in the frontend or a goal. See [provider setup](provider-setup.md).
 - VS Code dev container: the backend (8000) and Vite console (5173) start
   automatically; open the forwarded <http://127.0.0.1:5173>.
 
-Both start Appium in its own container. See [Docker and dev container](docker.md)
-for device connection, restarts and logs.
+Both start Appium in its own container and drive Android only. To pick an iOS
+simulator or iPhone, start the backend natively on macOS as described in
+[iOS setup](ios-setup.md). See [Docker and dev container](docker.md) for
+device connection, restarts and logs.
 
 ## Run a bounded test
 
 1. Connect and unlock an Android device authorized for testing. Follow
    [Android setup](android-setup.md). Pick it from the Device dropdown (press
    Refresh after connecting or authorizing it); unauthorized/offline devices are
-   listed with the reason but cannot be selected. Configuration readiness does not
+   listed with the reason but cannot be selected. The one list shows Android and
+   iOS entries with the platform on each; the run uses the selected entry's
+   platform. A shut-down iOS simulator is listed but not selectable: start it
+   from Xcode, then Refresh. Visto never boots a simulator or builds
+   WebDriverAgent, but the driver will if a session targets a target that is not
+   ready, so prepare it first; see [iOS setup](ios-setup.md). Submission waits until the list
+   confirms the platform. Configuration readiness does not
    prove physical connectivity or provider account access.
 2. Pick the AI model (`gpt-6-luna` default, `gpt-5.6-terra`, `gpt-6-sol`); it is
    fixed for the whole run and shown in the run view. Your account must have

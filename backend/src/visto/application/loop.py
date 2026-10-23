@@ -32,7 +32,16 @@ from visto.domain.run import (
 from visto.domain.validation import validate_action, validate_decision
 
 from .context import AgentContext, AgentReply, PresentedImage
-from .ports import Agent, ArtifactStore, Clock, Device, PortError, RunControl, RunStore
+from .ports import (
+    Agent,
+    ArtifactStore,
+    Clock,
+    Device,
+    OperatorActionRequired,
+    PortError,
+    RunControl,
+    RunStore,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -470,7 +479,9 @@ class RunLoop:
             history = await self.store.history(run.run_id)
             ids = tuple(r.observation_id for r in history if isinstance(r, Observation))
             detail = "Technical operation failed; inspect recorded evidence"
-            if component == "agent" and isinstance(error, PortError):
+            if isinstance(error, OperatorActionRequired):
+                detail = str(error)
+            elif component == "agent" and isinstance(error, PortError):
                 if str(error) in _SAFE_PROVIDER_ERRORS:
                     detail = str(error)
             return await self.store.finalize(

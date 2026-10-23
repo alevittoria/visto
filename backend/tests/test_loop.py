@@ -7,7 +7,7 @@ import pytest
 
 from visto.application.context import AgentReply
 from visto.application.loop import ContextLimits, RunLoop
-from visto.application.ports import PortError
+from visto.application.ports import OperatorActionRequired, PortError
 from visto.application.runtime import MutableRunControl
 from visto.domain.commands import CommandKind, Tap
 from visto.domain.models import (
@@ -113,8 +113,11 @@ class FakeDevice:
         self.raise_execute = False
         self.after_execute = lambda: None
         self.fail_release = False
+        self.fail_acquire = None
 
     async def acquire(self, run_id, device_id, timeout_ms):
+        if self.fail_acquire is not None:
+            raise self.fail_acquire
         assert self.active is None
         self.leases += 1
         self.active = DeviceLease(f"lease-{self.leases}", run_id, device_id, "session")
@@ -594,6 +597,28 @@ def test_provider_diagnostics_only_expose_exact_safe_codes(message, expected):
     loop, run, _, _, _, _, _ = make_runner([PortError(message)])
     result = asyncio.run(loop.start(run))
     assert isinstance(result.terminal, InfrastructureFailure)
+    assert result.terminal.detail == expected
+
+
+@pytest.mark.parametrize(
+    "error,expected",
+    [
+        (
+            OperatorActionRequired("android: export ANDROID_HOME for Appium"),
+            "android: export ANDROID_HOME for Appium",
+        ),
+        (
+            PortError("android: remote text"),
+            "Technical operation failed; inspect recorded evidence",
+        ),
+    ],
+)
+def test_only_operator_action_errors_reach_the_terminal_detail(error, expected):
+    loop, run, device, _, _, _, _ = make_runner([])
+    device.fail_acquire = error
+    result = asyncio.run(loop.start(run))
+    assert isinstance(result.terminal, InfrastructureFailure)
+    assert result.terminal.component == "device.acquire"
     assert result.terminal.detail == expected
 
 

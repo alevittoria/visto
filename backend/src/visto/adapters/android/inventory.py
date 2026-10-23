@@ -5,23 +5,20 @@ import os
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
+
+from visto.adapters.devices import AttachedDevice, InventoryUnavailable, Platform
+
+__all__ = [
+    "AttachedDevice",
+    "InventoryUnavailable",
+    "find_adb",
+    "list_devices",
+    "parse_devices",
+]
 
 _SERIAL = re.compile(r"^[A-Za-z0-9._:\-]{1,256}$")
 _DETAIL = re.compile(r"^([a-z_]+):(\S{1,128})$")
-
-
-@dataclass(frozen=True, slots=True)
-class AttachedDevice:
-    serial: str
-    state: str  # adb state, e.g. device, unauthorized, offline
-    model: str | None = None
-    product: str | None = None
-
-
-class InventoryUnavailable(Exception):
-    """Safe message only; never includes process output or local paths."""
 
 
 def find_adb(environ: dict[str, str] | None = None) -> Path | None:
@@ -53,6 +50,7 @@ def parse_devices(output: str) -> tuple[AttachedDevice, ...]:
         details = dict(m.groups() for p in parts[2:] if (m := _DETAIL.match(p)))
         devices.append(
             AttachedDevice(
+                Platform.ANDROID,
                 serial,
                 state,
                 details.get("model", "").replace("_", " ") or None,

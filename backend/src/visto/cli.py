@@ -3,12 +3,17 @@
 import argparse
 import asyncio
 import json
+import os
 import signal
+import subprocess
 import sys
 from dataclasses import asdict, replace
 from pathlib import Path
 
 from visto.adapters.ai.openai import history_data
+from visto.adapters.devices import Platform
+from visto.adapters.ios.device import SIGNING
+from visto.adapters.ios.inventory import find_xcrun
 from visto.adapters.storage import LocalArtifactStore, SQLiteRunStore
 from visto.application.ports import PortError
 from visto.application.runtime import MutableRunControl
@@ -43,6 +48,12 @@ def parser():
             p.add_argument("--run-id", required=True)
             continue
         p.add_argument("--device", required=name == "run", default="")
+        p.add_argument(
+            "--platform",
+            choices=[platform.value for platform in Platform],
+            default=Platform.ANDROID.value,
+            help="Target platform; the device must match it",
+        )
         p.add_argument("--appium-url", default="http://127.0.0.1:4723")
         p.add_argument("--model", default="gpt-6-luna")
         p.add_argument(
@@ -73,6 +84,28 @@ def parser():
                 help="Disable every device mutation capability",
             )
     return root
+
+
+def xcrun_tool(xcrun, name):
+    """Whether an Xcode command-line tool resolves; read-only, contacts no device."""
+    try:
+        done = subprocess.run(
+            [str(xcrun), "--find", name], capture_output=True, timeout=10, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return done.returncode == 0
+
+
+def ios_prerequisites():
+    xcrun = find_xcrun()
+    return {
+        "xcrun_present": xcrun is not None,
+        "simulator_tooling_present": xcrun is not None and xcrun_tool(xcrun, "simctl"),
+        "device_tooling_present": xcrun is not None and xcrun_tool(xcrun, "devicectl"),
+        # Presence only: signing identifiers are configuration and never echoed.
+        "wda_signing_configured": all(os.environ.get(name, "").strip() for _, name in SIGNING),
+    }
 
 
 def emit(value, output):
@@ -230,12 +263,19 @@ def main(argv=None, *, output=print, prompt=input, factory=build_runtime):
             asyncio.run(inspect())
             return 0
         settings = RunnerSettings(
-            args.device or "configuration-check", args.data_dir, args.appium_url, args.model
+            args.device or "configuration-check",
+            args.data_dir,
+            args.appium_url,
+            args.model,
+            platform=Platform(args.platform),
         )
         key = resolve_api_key(args.env_file)
         if args.command == "doctor":
+            platform = Platform(args.platform)
+            ios = ios_prerequisites() if platform is Platform.IOS else {}
             emit(
                 {
+                    "platform": platform.value,
                     "configuration_only": True,
                     "api_key_present": bool(key.strip()),
                     "device_serial_supplied": bool(args.device),
@@ -243,13 +283,18 @@ def main(argv=None, *, output=print, prompt=input, factory=build_runtime):
                     "appium_url": args.appium_url,
                     "data_directory": str(args.data_dir.resolve()),
                     "lease_directory": str(settings.lease_directory.resolve()),
+                    **ios,
                     "device_contacted": False,
                     "provider_contacted": False,
                     "next": "Follow docs/first-device-test.md; live readiness is unverified",
                 },
                 output,
             )
-            return 0 if key.strip() and args.device else 2
+            # Simulator tooling is the floor. Device tooling and signing are reported
+            # for physical phones but do not gate a simulator-only setup.
+            toolchain = not ios or (ios["xcrun_present"] and ios["simulator_tooling_present"])
+            ready = key.strip() and args.device and toolchain
+            return 0 if ready else 2
         if not key.strip():
             raise ValueError("OPENAI_API_KEY is missing; set it in .env or the process environment")
         limits = RunLimits(
@@ -259,7 +304,14 @@ def main(argv=None, *, output=print, prompt=input, factory=build_runtime):
             args.command_timeout_ms,
             args.max_wait_ms,
         )
-        settings = RunnerSettings(args.device, args.data_dir, args.appium_url, args.model, limits)
+        settings = RunnerSettings(
+            args.device,
+            args.data_dir,
+            args.appium_url,
+            args.model,
+            limits,
+            platform=Platform(args.platform),
+        )
         if args.observe_only:
             settings = replace(settings, capabilities=())
         if args.request_file is not None:

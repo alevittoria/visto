@@ -9,12 +9,12 @@ from test_api import directory, make_service  # noqa: F401  (fixture reuse)
 
 from visto.adapters.android.host_bridge import HostAdb, bridge
 from visto.adapters.android.inventory import (
-    AttachedDevice,
     InventoryUnavailable,
     find_adb,
     list_devices,
     parse_devices,
 )
+from visto.adapters.devices import AttachedDevice, Platform
 from visto.composition import create_app
 
 OUTPUT = """* daemon not running; starting now at tcp:5037
@@ -31,11 +31,25 @@ bad<serial>            device
 
 def test_parse_keeps_states_and_details_and_skips_malformed_lines():
     assert parse_devices(OUTPUT) == (
-        AttachedDevice("SERIAL01", "device", "Demo Phone", "demo"),
-        AttachedDevice("emulator-5554", "unauthorized"),
-        AttachedDevice("192.168.1.20:5555", "offline"),
+        AttachedDevice(Platform.ANDROID, "SERIAL01", "device", "Demo Phone", "demo"),
+        AttachedDevice(Platform.ANDROID, "emulator-5554", "unauthorized"),
+        AttachedDevice(Platform.ANDROID, "192.168.1.20:5555", "offline"),
     )
     assert parse_devices("") == ()
+
+
+def test_adb_parsing_tags_every_entry_as_android():
+    assert {d.platform for d in parse_devices(OUTPUT)} == {Platform.ANDROID}
+
+
+def test_selectability_is_platform_specific():
+    assert AttachedDevice(Platform.ANDROID, "device-A", "device").selectable is True
+    assert AttachedDevice(Platform.ANDROID, "device-A", "unauthorized").selectable is False
+    assert AttachedDevice(Platform.IOS, "device-B", "booted").selectable is True
+    assert AttachedDevice(Platform.IOS, "device-B", "shutdown").selectable is False
+    assert AttachedDevice(Platform.IOS, "device-B", "connected").selectable is True
+    assert AttachedDevice(Platform.IOS, "device-B", "device").selectable is False
+    assert [Platform.ANDROID.value, Platform.IOS.value] == ["android", "ios"]
 
 
 def test_find_adb_prefers_sdk_environment_then_path():
@@ -77,10 +91,10 @@ def test_devices_route_lists_selectable_devices_and_hides_failure_detail(directo
     with TestClient(create_app(service), base_url="http://localhost") as client:
         body = client.get("/api/devices").json()
     assert body["available"] is True and body["error"] is None
-    assert [(d["serial"], d["selectable"]) for d in body["devices"]] == [
-        ("SERIAL01", True),
-        ("emulator-5554", False),
-        ("192.168.1.20:5555", False),
+    assert [(d["serial"], d["platform"], d["selectable"]) for d in body["devices"]] == [
+        ("SERIAL01", "android", True),
+        ("emulator-5554", "android", False),
+        ("192.168.1.20:5555", "android", False),
     ]
     assert body["devices"][0]["model"] == "Demo Phone"
 

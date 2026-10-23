@@ -6,7 +6,7 @@ Code:
   cross-reference validation.
 - `backend/src/visto/application/`: context/ports, conversational loop,
   clock and cooperative runtime controls.
-- `backend/src/visto/adapters/`: `ai`, `android`, `storage`, `api`, `pricing`,
+- `backend/src/visto/adapters/`: `ai`, `appium` (shared session core), `android`, `ios`, `storage`, `api`, `pricing`,
   `reports` and the technical `command_codec.py`.
 - `backend/src/visto/{composition,configuration,runner,cli}.py`: ASGI factory,
   settings, headless composition and terminal use.
@@ -14,7 +14,9 @@ Code:
 - `backend/tests/`: backend tests, including the import-direction guard.
 - `frontend/`: React/TypeScript console, native Node tests and Vite build; see
   `frontend/README.md` for its source layout.
-- `tools/appium/`: pinned Appium/UiAutomator2 package and lock for the appium image.
+- `tools/appium/`: pinned Appium/UiAutomator2 package and lock for the appium image;
+  `tools/appium/macos/`: pinned Appium, UiAutomator2 and XCUITest manifest for the
+  native macOS mode.
 - `compose.yaml`, `compose.usb.yaml`, `docker/`: containerized stack (net, appium,
   backend, web) and nginx proxy; `.devcontainer/`: VS Code dev container.
 - `scripts/verify.py`: fixed-command local test/lint/build orchestration.

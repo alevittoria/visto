@@ -43,8 +43,10 @@ per inference with no automatic retries. Errors, refusal, incomplete output,
 timeouts, invalid coordinates and references are technical failures. They do not
 become a failed application test. Missing reported token usage remains unknown.
 
-`android-agent-v3` is the versioned instruction resource under `backend/prompts/`
-and is included in the wheel. Every turn rebuilds the same logical conversation
+The instructions are a shared core (`agent-core.md`) plus one versioned notes
+file per platform, `android-agent-v3` and `ios-agent-v1`, rendered together for
+the run's platform. All of them live under `backend/prompts/` and are included
+in the wheel. Every turn rebuilds the same logical conversation
 from immutable goal/constraints, bounded recent decisions, working plan, actual
 pre/post images, technical receipt and attributed user answers. There are no
 opaque remote continuation handles. Context overflow fails explicitly rather
@@ -55,8 +57,15 @@ v2 changes only type_text semantics: one whole-value set on the
 focused field; runs recorded with v1 keep their original identity.
 v3 adds the `long_press` and `enter` commands; v2 runs keep theirs.
 
-Coordinates refer to the original screenshot dimensions, which accompany each
-image; images are sent without local resizing. Responses requesting unsupported
+A screenshot larger than the provider's `high` detail limits (2048 pixels per
+side, 2,500 patches of 32×32 pixels) is downscaled locally, keeping its aspect
+ratio, before it is sent; the provider would otherwise resize it itself and the
+model would answer in coordinates of an image it was never told about. The
+dimensions sent with each image are those of the image actually sent, the model
+answers in its pixels, and the adapter maps commands back to source-screenshot
+pixels; commands in the history are shown in the same scale. Stored screenshots,
+evidence and reports keep the original size. Smaller screenshots are sent
+unchanged. Responses requesting unsupported
 commands or fields are rejected. App text and screenshots cannot redefine the
 goal or instructions. The AI may adapt its plan, ask a question or conclude
 passed, failed or inconclusive using only supplied evidence.

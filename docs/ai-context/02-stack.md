@@ -9,7 +9,8 @@
 | Backend checks/build | pytest, Ruff, httpx2, hatchling | Locked development/build groups |
 | Persistence | Python stdlib SQLite + local screenshot files | Transactional tagged JSON and immutable artifacts |
 | Android | Appium 3 / UiAutomator2 | `tools/appium` lock, installed in the appium container; stdlib REST adapter |
-| AI | OpenAI Responses API | Versioned instructions in `backend/prompts/`; stdlib HTTPS in a fixed child process, no SDK |
+| iOS | Appium 3 / XCUITest driver, Xcode `xcrun` | `tools/appium/macos` manifest (no lockfile), native macOS only; stdlib REST adapter |
+| AI | OpenAI Responses API, Pillow | Versioned instructions in `backend/prompts/`; stdlib HTTPS in a fixed child process, no SDK; Pillow downscales screenshots to the provider's image limits |
 | Containers | Docker Compose, VS Code dev container | `compose.yaml`, `docker/`, `.devcontainer/` |
 | Companion checks | Python 3.12+ standard library | No package install required |
 

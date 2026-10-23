@@ -28,7 +28,16 @@ establish live integration acceptance.
 ## Runner, provider and Android
 
 - [Responses image input](https://developers.openai.com/api/docs/guides/images-vision):
-  identified Base64 image content, multiple images and source-image pixel contract.
+  identified Base64 image content and multiple images. Per-model sizing: `high`
+  fits images within 2048 × 2048 pixels and 2,500 patches of 32 × 32 pixels on
+  the models that list both limits, and the page advises, for coordinate-sensitive
+  tasks, to "resize images to fit those limits before sending them" and "map
+  returned coordinates back to the original image". `gpt-6-luna` is not in the
+  page's sizing table; its observed offset (≈0.896 for a 1178 × 2556 screenshot)
+  matches the documented 2,500-patch formula.
+- [Pillow `Image.resize`](https://pillow.readthedocs.io/en/stable/reference/Image.html#PIL.Image.Image.resize)
+  with `Image.Resampling.LANCZOS`: local downscaling of screenshots sent to the
+  provider.
 - [Structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs):
   strict JSON schema, nullable fields, refusal and incomplete-response handling.
 - [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol): selectable
@@ -66,6 +75,12 @@ establish live integration acceptance.
   [UiAutomator2 8.7.0 release](https://github.com/appium/appium-uiautomator2-driver/releases/tag/v8.7.0):
   pinned versions; Node 24 meets the documented engine requirements, Android
   API 26 or later is required.
+- [W3C WebDriver errors](https://w3c.github.io/webdriver/#errors): a failed command
+  answers with `error` and `message` in `value`. The appium-adb bundled with
+  UiAutomator2 8.7.0 (`build/lib/utils/helpers/sdk.js`) throws "Neither
+  ANDROID_HOME nor ANDROID_SDK_ROOT environment variable was exported" when the
+  Appium process has no SDK path; the Android adapter maps that message to a fixed
+  operator hint and never shows the server text.
 - [Appium package-root discovery](https://appium.io/docs/en/latest/guides/managing-exts/#do-it-yourself-with-npm):
   use own pinned package dependencies as local extensions without global npm links.
 - [Python asyncio subprocesses](https://docs.python.org/3.12/library/asyncio-subprocess.html),
@@ -182,3 +197,106 @@ governing official references.
 - Browser side: [MediaRecorder](https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder)
   with `isTypeSupported` and [getUserMedia](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia),
   which requires a secure context (localhost counts).
+
+## iOS
+
+- [Running your app in Simulator or on a device](https://developer.apple.com/documentation/xcode/running-your-app-in-simulator-or-on-a-device):
+  Apple's overview of simulated and physical iOS targets; the inventory lists both.
+- `xcrun simctl list devices --json` (Xcode command-line tools; `xcrun simctl help list`
+  documents `-j/--json`): top-level `devices` maps a runtime identifier
+  (`com.apple.CoreSimulator.SimRuntime.<platform>-<version>`) to simulators with
+  `udid`, `name`, `state` (`Booted`, `Shutdown`, ...) and `isAvailable`. Non-iOS
+  runtimes (watchOS, tvOS) share the list and are skipped.
+- `xcrun devicectl list devices --json-output <path>` (CoreDevice command-line
+  tool, Xcode 15 or newer; `xcrun devicectl list devices --help` documents it).
+  Evidence level: the flag, the `result.devices[]` envelope, the `properties` keys
+  and the deprecation of the three legacy keys were checked against the installed
+  toolchain's own help and output, which contained only simulated entries. The
+  values for a physical device (`connection.state` = `connected`,
+  `connection.pairingState` = `paired`, `hardware.reality` = `physical`) are inferred
+  from the help text and the legacy `tunnelState` semantics and have not been seen on
+  real hardware; the physical path stays unverified until a phone is attached. There
+  is no `--json` flag: JSON goes to a file, and `/dev/stdout` with `--quiet` yields
+  it on standard output. The result is `result.devices[]`. The `properties`
+  dictionary (`connection.state`, `connection.pairingState`, `hardware.udid`,
+  `hardware.reality`, `hardware.marketingName`, `hardware.productType`) replaces the
+  deprecated `hardwareProperties`, `deviceProperties` and `connectionProperties`
+  keys. Simulators also appear with `reality` `simulated`; only `physical` entries
+  are taken from this command.
+- `xcrun xctrace list devices` is deprecated for device discovery and is not used.
+- [Appium XCUITest driver capabilities](https://appium.github.io/appium-xcuitest-driver/latest/reference/capabilities/):
+  `appium:udid`, `appium:platformVersion`, `appium:deviceName` and
+  `appium:usePreinstalledWDA` select the target and WebDriverAgent handling.
+  The device adapter sends `appium:noReset`, `appium:fullReset`, `appium:autoLaunch`,
+  `appium:shouldTerminateApp` and `appium:newCommandTimeout` so a run neither installs,
+  launches nor terminates an application, plus `appium:usePrebuiltWDA`
+  ("Skips the build phase of running the WDA app") when the operator declares that
+  WebDriverAgent is already built, and `appium:derivedDataPath` ("Overrides the
+  folder that should be used for derived data") when the operator names the
+  build's derived data folder; with both, the installed driver runs
+  `xcodebuild test-without-building -derivedDataPath <path>`. `appium:xcodeOrgId` (team identifier, effective only
+  with `appium:xcodeSigningId`), `appium:xcodeSigningId` (certificate name) and
+  `appium:updatedWDABundleId` (WebDriverAgent bundle identifier, which needs a matching
+  provisioning profile) carry the signing values; they are configuration, never logged.
+  `appium:usePreinstalledWDA` is the alternative for iOS 17 or newer, which launches an
+  installed runner without `xcodebuild`; it is not used, since the pre-step builds and
+  installs WebDriverAgent itself.
+- [`mobile: pressButton`](https://appium.github.io/appium-xcuitest-driver/latest/reference/execute-methods/):
+  execute method taking `name`, case-insensitive; on iOS `home` is accepted, while
+  `volumeup`/`volumedown` are real devices only. `home` is the adapter's home command.
+- XCUITest wire routes used by the device adapter, with the Appium route maps that
+  register them and the driver methods that serve them:
+  [`GET /session/:id/screenshot`](https://www.w3.org/TR/webdriver2/#take-screenshot)
+  (driver `getScreenshot`, WebDriverAgent `/screenshot`, Base64 PNG),
+  [`GET /session/:id/window/rect`](https://www.w3.org/TR/webdriver2/#get-window-rect)
+  (driver `getWindowRect`, WebDriverAgent `/window/rect`; the window size is in points,
+  which is the gesture coordinate space, while the screenshot is in pixels),
+  [`POST /session/:id/actions`](https://www.w3.org/TR/webdriver2/#perform-actions)
+  (driver `performActions`, which forces `pointerType: touch`, drops zero-duration
+  pauses and passes the sequence to WebDriverAgent `/actions`),
+  [`GET /session/:id/element/active`](https://www.w3.org/TR/webdriver2/#get-active-element)
+  (driver `active`) and
+  [`POST /session/:id/element/:id/value`](https://www.w3.org/TR/webdriver2/#element-send-keys)
+  (driver `setValue`). The
+  [W3C route map](https://github.com/appium/appium/blob/master/packages/base-driver/lib/protocol/routes/w3c.ts)
+  declares `text` as the required parameter of the element-value route; XCUITest has no
+  `replace` option as UiAutomator2 does, so the text is sent in one request and does
+  not clear the field (the adapter does not clear it; the instructions tell the model to
+  clear first), and `enter` is a newline sent the same way.
+- Orientation on iOS: the adapter reads
+  [`GET /session/:id/rotation`](https://github.com/appium/appium/blob/master/packages/base-driver/lib/protocol/routes/mjsonwp.ts),
+  which the
+  [driver's no-proxy list](https://github.com/appium/appium-xcuitest-driver/blob/master/lib/driver.ts)
+  does not intercept, so it reaches
+  [WebDriverAgent's `/rotation`](https://github.com/appium/WebDriverAgent/blob/master/WebDriverAgentLib/Commands/FBOrientationCommands.m).
+  Its [rotation mapping](https://github.com/appium/WebDriverAgent/blob/master/WebDriverAgentLib/Categories/XCUIDevice%2BFBRotation.m)
+  returns `x`/`y`/`z` with `z` in 0/90/180/270, the vocabulary the domain already uses,
+  and no value for an unknown orientation, which the adapter refuses. `GET /orientation`
+  is not used: WebDriverAgent maps upside-down to `PORTRAIT` and landscape-right to
+  `LANDSCAPE`, so it cannot tell all four interface orientations apart. The rotation
+  value is a stable frame label, not a derived angle: `/rotation` indexes a
+  device-orientation table with the interface orientation, which swaps the two landscape
+  senses. Only equality matters, since the frame guard compares the value before and
+  after a capture and coordinates come from `to_points`.
+- Evidence level for the four entries above: the XCUITest driver is pinned only in
+  `tools/appium/macos/package.json` (below), and was not installed here, so these were
+  checked against the driver's published documentation, the current driver and
+  WebDriverAgent sources linked above, and Appium's base-driver route maps. Nothing here
+  was exercised against a simulator or a phone, and the physical-device path, including
+  WebDriverAgent signing, stays unverified until a phone is attached. Apple's own
+  developer pages are JavaScript-rendered and could not be fetched.
+- [XCUITest driver 12.19.1 release](https://github.com/appium/appium-xcuitest-driver/releases/tag/v12.19.1)
+  and its [package manifest](https://github.com/appium/appium-xcuitest-driver/blob/v12.19.1/package.json):
+  the version pinned in `tools/appium/macos/package.json` beside Appium 3.8.0 and
+  UiAutomator2 8.7.0. Checked: the GitHub releases page listed 12.19.1 as the latest
+  release, and its manifest declares the peer dependency `appium` `^3.0.0-rc.2` (so
+  Appium 3.8.0 satisfies it) and the same Node engine range as the container manifest.
+  Also checked: a frozen-lockfile install with the container's flags completes and
+  Appium lists both drivers as installed. Not checked: that the driver runs a session,
+  or any compatibility with a given Xcode release.
+- [XCUITest device setup](https://appium.github.io/appium-xcuitest-driver/latest/getting-started/device-setup/):
+  real devices need a trusted computer, Developer Mode (iOS 16 or newer), UI Automation
+  enabled, and a WebDriverAgent with a valid provisioning profile. The page defers
+  signing detail to a separate provisioning-profile guide that was not read; the
+  seven-day expiry and per-operator bundle identifier of a free team come from the
+  approved design, not from this page.

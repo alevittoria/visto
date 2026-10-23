@@ -118,14 +118,17 @@ def check_schema(value, schema):
         raise ValueError("Malformed decision field")
 
 
-def decode_decision(payload, context: AgentContext, usage: ModelUsage) -> AgentDecision:
+def decode_decision(
+    payload, context: AgentContext, usage: ModelUsage, to_source=lambda command: command
+) -> AgentDecision:
+    """`to_source` maps a command from the presented image's pixels to the screenshot's."""
     check_schema(payload, SCHEMA)
     decision_id = uuid4().hex
     run_id = context.run.run_id
     nxt = payload["next"]
     match nxt["kind"]:
         case "act":
-            choice = Act(decode_command(nxt["command"]), nxt["timeout_ms"])
+            choice = Act(to_source(decode_command(nxt["command"])), nxt["timeout_ms"])
         case "observe_after":
             choice = ObserveAfter(nxt["delay_ms"])
         case "ask_user":

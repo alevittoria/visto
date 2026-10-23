@@ -1,4 +1,4 @@
-# First Android device tests
+# First device tests
 
 The headless CLI drives the same single-conversation runner as the web console.
 It runs inside the Docker stack or the dev container, against the containerized
@@ -21,6 +21,24 @@ is not copied into arguments, reports or request artifacts. Screenshots, goal,
 action details and clarifications leave this computer for inference. See
 [provider setup](provider-setup.md) for transmission/retention and
 [artifact storage](artifact-storage.md) for private local evidence.
+
+## First run on iOS
+
+iOS needs the backend or CLI started natively on macOS, not in the containers.
+Complete [iOS setup](ios-setup.md) first: install the pinned Appium stack, boot
+the simulator or prepare the phone, and install WebDriverAgent. Check the
+toolchain with `python -m visto.cli doctor --platform ios --device <udid>`, then
+run an observation test as below with `--platform ios`:
+
+```sh
+python -m visto.cli run --platform ios --device <udid> --observe-only \
+  --goal "Observe the current screen and check whether it shows the home screen. Conclude from visible evidence."
+```
+
+Run these commands from the repository root so the lease directory is shared
+with the console. The iOS path has local checks only; no simulator or phone run
+has been recorded, so treat a first iOS run as the first live evidence rather
+than a confirmation.
 
 ## Run a first observation test
 
@@ -103,6 +121,7 @@ Doctor contacts neither provider nor device. CLI and console share
 active run on it.
 
 Uncertain mutation or unknown startup/cleanup retains the lease and never retries
-the command automatically. Follow [Android recovery](android-setup.md) before a
+the command automatically. Follow [Android recovery](android-setup.md) (or
+[iOS recovery](ios-setup.md#recovery-of-a-retained-lease)) before a
 new run. Process-crash auto-resume is unsupported; same-process question/answer
 resume works.

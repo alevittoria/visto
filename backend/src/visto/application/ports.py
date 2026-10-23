@@ -34,6 +34,12 @@ class PortError(Exception):
     """
 
 
+class OperatorActionRequired(PortError):
+    """Known setup fault whose fixed adapter-written message tells the operator what
+    to fix. It is shown as the run's terminal detail, so it never carries remote text.
+    """
+
+
 class Device(Protocol):
     async def acquire(self, run_id: str, device_id: str, timeout_ms: int) -> DeviceLease:
         """Acquire exclusive ownership or fail, without stealing another lease."""

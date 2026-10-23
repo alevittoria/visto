@@ -4,7 +4,7 @@ import type { AttachedDevice, DeviceInventory } from '../console.ts';
 
 interface Props {
   value: string;
-  onSelect: (serial: string) => void;
+  onSelect: (serial: string, devices: AttachedDevice[]) => void;
   onLoaded: (devices: AttachedDevice[]) => void;
   invalid: boolean;
   describedBy?: string;
@@ -18,7 +18,7 @@ export function DeviceSelect({ value, onSelect, onLoaded, invalid, describedBy }
   const loaded = useRef(onLoaded);
   loaded.current = onLoaded;
 
-  // Listing runs `adb devices` on the server: only on open and on explicit refresh.
+  // Listing runs `adb devices` and the iOS listers on the server: only on open and on explicit refresh.
   // Refresh also connects host USB phones (Docker Desktop), which can take seconds
   // and makes the phone prompt to authorize the container's adb key.
   const load = useCallback(async (connect = false) => {
@@ -52,7 +52,7 @@ export function DeviceSelect({ value, onSelect, onLoaded, invalid, describedBy }
   return (
     <>
       <div className="inline">
-        <select id="device" value={selectable.some((d) => d.serial === value) ? value : ''} onChange={(e) => onSelect(e.target.value)}
+        <select id="device" value={selectable.some((d) => d.serial === value) ? value : ''} onChange={(e) => onSelect(e.target.value, devices)}
           aria-invalid={invalid} aria-describedby={describedBy} aria-busy={state.loading}>
           <option value="" disabled>{placeholder}</option>
           {devices.map((device) => (
@@ -65,7 +65,7 @@ export function DeviceSelect({ value, onSelect, onLoaded, invalid, describedBy }
       </div>
       <p id="device-status" className={state.error ? 'error-text' : 'help'} aria-live="polite">
         {state.error ?? (devices.length === 0 && !state.loading
-          ? 'Connect a phone with USB debugging enabled, unlock it, then press Refresh.'
+          ? 'Connect an Android phone with USB debugging enabled, or boot an iOS simulator from Xcode, then press Refresh.'
           : `${selectable.length} ready of ${devices.length} connected.`)}
       </p>
       {state.inventory?.notes.map((note) => <p key={note} className="help">{note}</p>)}

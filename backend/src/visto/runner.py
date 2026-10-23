@@ -5,14 +5,19 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from visto.adapters.ai import INSTRUCTION_VERSION, OpenAIAgent
+from visto.adapters.ai import INSTRUCTION_VERSIONS, OpenAIAgent
 from visto.adapters.android import AppiumDevice
+from visto.adapters.devices import Platform
+from visto.adapters.ios.device import XCUITestDevice
 from visto.adapters.storage import LocalArtifactStore, SQLiteRunStore
 from visto.application.loop import RunLoop
 from visto.application.runtime import MutableRunControl, SystemClock
 from visto.domain.commands import CommandKind
 from visto.domain.models import Goal, ModelIdentity, RunConfiguration, RunLimits
 from visto.domain.run import Run
+
+# The one place a platform selects its device adapter.
+DEVICE_ADAPTERS = {Platform.ANDROID: AppiumDevice, Platform.IOS: XCUITestDevice}
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +29,7 @@ class RunnerSettings:
     limits: RunLimits = RunLimits(1200000, 60, 90, 60000, 10000)
     lease_directory: Path = Path(".work/device-leases")
     capabilities: tuple[CommandKind, ...] = tuple(CommandKind)
+    platform: Platform = Platform.ANDROID
 
     def __post_init__(self):
         if not self.device_id.strip() or not self.model.strip():
@@ -43,11 +49,11 @@ class RunnerSettings:
 
 def build_runtime(settings: RunnerSettings, api_key: str, control: MutableRunControl) -> RunLoop:
     """Validate provider configuration before creating local evidence directories."""
-    agent = OpenAIAgent(api_key, settings.model)
+    agent = OpenAIAgent(api_key, settings.model, platform=settings.platform)
     root = settings.data_directory.resolve()
     artifacts = LocalArtifactStore(root / "artifacts")
     store = SQLiteRunStore(root / "runs.sqlite3", artifacts)
-    device = AppiumDevice(
+    device = DEVICE_ADAPTERS[settings.platform](
         settings.appium_url,
         settings.lease_directory.resolve(),
         request_timeout_ms=settings.limits.max_command_timeout_ms,
@@ -64,8 +70,8 @@ def new_run(settings: RunnerSettings, goal: Goal, clock: SystemClock) -> Run:
         RunConfiguration(
             settings.limits,
             settings.capabilities,
-            ModelIdentity("openai", settings.model, INSTRUCTION_VERSION),
-            "appium-wire-v1",
+            ModelIdentity("openai", settings.model, INSTRUCTION_VERSIONS[settings.platform]),
+            DEVICE_ADAPTERS[settings.platform].version,
         ),
         now,
         now,
