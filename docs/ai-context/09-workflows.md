@@ -15,10 +15,8 @@
 
 ## Running the application
 
-Development and runs use the VS Code dev container or the Docker stack; see
-[Docker](../docker.md). Locked backend/frontend setup is in
-[local development](../local-development.md). The headless CLI runs in the
-backend or dev container against the containerized Appium: see
+Appium, the backend and the console run as local processes; see
+[installation](../local-development.md). The headless CLI needs only Appium: see
 [first device test](../first-device-test.md). Live results are reported
 separately from local software tests.
 

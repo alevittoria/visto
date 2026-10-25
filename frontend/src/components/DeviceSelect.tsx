@@ -19,16 +19,13 @@ export function DeviceSelect({ value, onSelect, onLoaded, invalid, describedBy }
   loaded.current = onLoaded;
 
   // Listing runs `adb devices` and the iOS listers on the server: only on open and on explicit refresh.
-  // Refresh also connects host USB phones (Docker Desktop), which can take seconds
-  // and makes the phone prompt to authorize the container's adb key.
-  const load = useCallback(async (connect = false) => {
+  const load = useCallback(async () => {
     active.current?.abort();
     const controller = new AbortController();
     active.current = controller;
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
-      const inventory = parseDevices(await apiRequest<unknown>(connect ? '/devices/refresh' : '/devices',
-        connect ? { method: 'POST', signal: controller.signal, timeoutMs: 60000 } : { signal: controller.signal }));
+      const inventory = parseDevices(await apiRequest<unknown>('/devices', { signal: controller.signal }));
       if (controller.signal.aborted) return;
       setState({ loading: false, inventory, error: inventory.available ? null : inventory.error ?? 'Devices could not be listed.' });
       loaded.current(inventory.devices);
@@ -59,7 +56,7 @@ export function DeviceSelect({ value, onSelect, onLoaded, invalid, describedBy }
             <option key={device.serial} value={device.serial} disabled={!device.selectable}>{deviceLabel(device)}</option>
           ))}
         </select>
-        <button type="button" className="secondary" onClick={() => void load(true)} disabled={state.loading}>
+        <button type="button" className="secondary" onClick={() => void load()} disabled={state.loading}>
           {state.loading ? 'Refreshing…' : 'Refresh'}
         </button>
       </div>

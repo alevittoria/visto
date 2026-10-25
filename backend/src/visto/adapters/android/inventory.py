@@ -1,4 +1,4 @@
-"""Read-only ADB device inventory: one fixed command, bounded, no generic shell."""
+"""ADB device inventory: fixed, bounded commands only, no generic shell."""
 
 import asyncio
 import os
@@ -15,6 +15,7 @@ __all__ = [
     "find_adb",
     "list_devices",
     "parse_devices",
+    "start_server",
 ]
 
 _SERIAL = re.compile(r"^[A-Za-z0-9._:\-]{1,256}$")
@@ -78,6 +79,30 @@ def _run(adb: Path, timeout_s: float) -> bytes:
     if result.returncode != 0:
         raise InventoryUnavailable("adb reported an error")
     return result.stdout[:65536]
+
+
+def _start(adb: Path, timeout_s: float) -> bool:
+    # No pipes: the daemon this spawns would inherit them and keep the call waiting.
+    try:
+        result = subprocess.run(
+            [str(adb), "start-server"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout_s,
+            check=False,
+            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return result.returncode == 0
+
+
+async def start_server(adb: Path | None, timeout_s: float = 15.0) -> bool:
+    """Start the adb server if it is not running; never raises."""
+    if adb is None:
+        return False
+    return await asyncio.to_thread(_start, adb, timeout_s)
 
 
 async def list_devices(adb: Path | None, timeout_s: float = 5.0) -> tuple[AttachedDevice, ...]:

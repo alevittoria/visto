@@ -24,7 +24,3 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
-
-# Local extra CA certificates for Docker builds (docker/certs/README.md)
-docker/certs/*
-!docker/certs/README.md

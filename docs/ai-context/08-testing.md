@@ -5,7 +5,7 @@ See the [evaluation protocol](../evaluation/protocol.md) and the
 
 ## Local checks
 
-After the [locked setup](../local-development.md) (or inside the dev container):
+After the [locked setup](../local-development.md):
 
 ```bash
 python scripts/verify.py

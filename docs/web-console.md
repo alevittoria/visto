@@ -11,14 +11,10 @@ Keep the configured API key in the ignored repository-root `.env`; the backend
 loads it server-side and a nonblank process key takes precedence. Never put the
 key in the frontend or a goal. See [provider setup](provider-setup.md).
 
-- Full stack: `docker compose up --build -d`, then open <http://localhost:8080>.
-- VS Code dev container: the backend (8000) and Vite console (5173) start
-  automatically; open the forwarded <http://127.0.0.1:5173>.
-
-Both start Appium in its own container and drive Android only. To pick an iOS
-simulator or iPhone, start the backend natively on macOS as described in
-[iOS setup](ios-setup.md). See [Docker and dev container](docker.md) for
-device connection, restarts and logs.
+Start Appium, the backend and the console as described in
+[installation](local-development.md#4-start), then open
+<http://127.0.0.1:5173>. iOS simulators and iPhones appear only when the backend
+runs on macOS; see [iOS setup](ios-setup.md).
 
 ## Run a bounded test
 

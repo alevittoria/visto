@@ -41,9 +41,7 @@ testing.
 - Building, installing or launching an application under test. Android attaches to
   whatever is already on screen (`autoLaunch` false, `noReset` true); iOS does the
   same. No bundle identifier is part of a run.
-- Running iOS from the Docker Compose stack. A Linux container cannot reach Xcode,
-  `simctl` or a USB-attached iPhone, and no bridge equivalent to the Android host
-  adb server exists for iOS.
+- Running iOS on Windows or Linux hosts, which cannot run Xcode or `simctl`.
 - Cloud device farms, remote iOS hosts, Android emulators, iPadOS, tvOS.
 - Reintroducing static UI predicates, label dictionaries, fixed semantic step
   categories or a deterministic verdict verifier. The AI owns semantic conclusions
@@ -92,12 +90,12 @@ typically by tapping the visible back control at the top left, or a "done" or
 "close" affordance. The iOS instructions state this explicitly, so the adaptation
 is designed behaviour rather than a lucky recovery.
 
-### iOS runs with the backend started natively on macOS
+### iOS runs with the backend on macOS
 
-The Compose stack remains an Android-only mode. Run natively on the Mac, the
-backend sees both `adb` and Xcode, which is what makes a single dropdown with both
-platforms possible. The documentation must say plainly which capabilities each mode
-has, so a user in Docker understands why no iOS device appears.
+On Windows and Linux the backend drives Android only. On a Mac the backend sees
+both `adb` and Xcode, which is what makes a single dropdown with both platforms
+possible. The documentation must say plainly what each host can drive, so a user
+on Windows or Linux understands why no iOS device appears.
 
 ### One console, one dropdown
 
@@ -226,12 +224,12 @@ against.
   behaviour is not modified by this work, since that adapter is live-verified; it
   remains a known issue in STATUS.
 - **Partial tooling.** When one platform's tooling is absent, the listing reports a
-  per-platform note and still returns the other platform's devices. A Docker-mode
-  user sees an explanatory note about iOS, not an error.
-- **Native mode serves both platforms.** One dropdown with Android and iOS together
-  means the macOS-native configuration must drive Android too, so the native Android
-  path becomes a documented, exercised mode and gets its own live re-check with an
-  Android phone. Compose remains Android-only.
+  per-platform note and still returns the other platform's devices. A user on
+  Windows or Linux sees an explanatory note about iOS, not an error.
+- **macOS serves both platforms.** One dropdown with Android and iOS together
+  means the macOS setup must drive Android too, so the Android path on macOS
+  becomes a documented, exercised setup and gets its own live re-check with an
+  Android phone.
 
 ## What is left to the builder
 

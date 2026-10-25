@@ -8,22 +8,49 @@ the [first device test](first-device-test.md)).
 
 ## Server versions and prerequisites
 
-Appium **3.8.0** and UiAutomator2 **8.7.0** run in the `appium` container
-(`docker/appium.Dockerfile`), installed from `tools/appium/package.json` and its
-frozen pnpm lock, together with the adb server, a JRE and Android build-tools.
-Both the full stack and the dev container use it; see
-[Docker and dev container](docker.md) for starting it and connecting a phone.
-The backend reaches it on loopback at `http://127.0.0.1:4723`.
+Appium **3.8.0** and UiAutomator2 **8.7.0** are installed from
+`tools/appium/package.json` and its frozen pnpm lock (on macOS from
+`tools/appium/macos`, which adds the XCUITest driver). They use the local
+Android SDK and JDK; see [installation](local-development.md) for the
+prerequisites, the environment variables and starting Appium. The backend
+reaches Appium on loopback at `http://127.0.0.1:4723`.
 
-UiAutomator2 8 requires Android 8/Oreo (API 26) or newer. Enable Developer options
-and USB debugging, authorize the container's adb key on the device, unlock the
-screen, and manually open the installed application in its intended initial
-state. Check the serial explicitly; the runner never chooses the first attached
-device:
+## Connect a device
+
+UiAutomator2 8 requires Android 8/Oreo (API 26) or newer.
+
+1. On the phone, enable Developer options (tap Build number seven times), then
+   USB debugging.
+2. Connect it by USB and accept the "Allow USB debugging" prompt for this
+   computer ("Always allow" keeps it authorized).
+3. Unlock the screen and manually open the application under test in its
+   intended initial state.
+4. Check that the device is listed as `device`; `unauthorized` means the prompt
+   was not accepted yet:
 
 ```sh
-docker compose exec appium adb devices -l
+adb devices -l
 ```
+
+The backend starts the adb server when it starts (`adb start-server`), so the
+console lists devices right away; the server keeps running when the backend
+stops. The runner never chooses the first attached device: pick the serial
+explicitly in the console or pass it to the CLI.
+
+### Wireless debugging
+
+On Android 11 or newer the phone can also connect over Wi-Fi, on the same network
+as the computer. In Developer options open Wireless debugging, choose "Pair
+device with pairing code", then:
+
+```sh
+adb pair <ip>:<pairing-port>       # enter the six-digit code
+adb connect <ip>:<port>            # the port shown on the Wireless debugging screen
+```
+
+The device then appears in `adb devices` as `<ip>:<port>`. Press Refresh in the
+console to list it. Reconnect with `adb connect` after the phone or the computer
+restarts.
 
 Do not enable relaxed security or the adb_shell insecure feature: this product
 exposes no shell command. Appium may install its on-device automation helpers
@@ -110,8 +137,9 @@ After a crash, unknown startup, uncertain mutation or cleanup failure:
    actual state manually. Stop any other client using this device.
 2. Inspect the single marker's device_id/run_id/PID and the run's persisted intent
    and receipt. Do not infer an application verdict from a lost transport.
-3. Only after the device is idle, delete that exact marker file, e.g.
-   `docker compose exec backend rm .work/device-leases/<verified-serial-hash>.lease`.
+3. Only after the device is idle, delete that exact marker file,
+   `.work/device-leases/<hash>.lease`, where `<hash>` is the SHA-256 of the
+   serial (`printf %s '<serial>' | sha256sum`; `shasum -a 256` on macOS).
    Never clear all leases while another run might own a device.
 4. Restart Appium and create a new run from fresh observations. Automatic resume
    of an interrupted mutation is unsupported.

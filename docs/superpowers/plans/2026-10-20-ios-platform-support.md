@@ -26,7 +26,7 @@
 
 - **Scale drift**: a screenshot-to-point ratio that is non-integral, non-uniform across axes, or inconsistent with the captured image must refuse the device with an explicit failure, never silently round. Pinned in Task 3.
 - **Platform/device mismatch**: an Android serial requested as iOS (or the reverse) must fail closed at session start with no leftover lease that a later run cannot explain. Pinned in Task 5.
-- **Missing platform tooling**: with Xcode absent (the Docker image, any Linux host) the listing still returns Android devices and explains iOS in a note, never a global error; with `adb` absent the reverse holds. Pinned in Task 4.
+- **Missing platform tooling**: with Xcode absent (any Windows or Linux host) the listing still returns Android devices and explains iOS in a note, never a global error; with `adb` absent the reverse holds. Pinned in Task 4.
 - **Runs stored before this change**: history, reports and the run-configuration view must still render runs whose configuration says `appium-wire-v1` and carries no platform. Pinned in Task 7.
 - **`type_text` with no focused field on iOS**: a `REJECTED` receipt saying nothing was typed, exactly as Android behaves, rather than text sent to whatever happens to be focused. Pinned in Task 5.
 
@@ -552,8 +552,7 @@ git commit -m "feat: show both platforms in the console device picker"
 
 **Files:**
 - Create: `docs/ios-setup.md`
-- Modify: `docs/local-development.md` (native macOS mode and what each mode can drive)
-- Modify: `docs/docker.md` (Compose is Android-only, and why)
+- Modify: `docs/local-development.md` (what each host can drive)
 - Modify: `docs/web-console.md` (platform in the picker)
 - Modify: `docs/first-device-test.md` (the iOS first run)
 - Modify: `docs/ai-context/02-stack.md`, `docs/ai-context/07-integrations.md`, `docs/ai-context/04-structure.md`
@@ -567,9 +566,9 @@ git commit -m "feat: show both platforms in the console device picker"
 
 Describe the current state only: no history, no dated notes, no machine-specific paths, no device identifiers. Say plainly that a run never boots a simulator and never builds WebDriverAgent, and what the operator does instead.
 
-- [ ] **Step 2: State each mode's capabilities**
+- [ ] **Step 2: State each host's capabilities**
 
-In `docs/local-development.md` and `docs/docker.md`, add the mode table: the dev container and Compose drive Android only; the backend started natively on macOS drives Android and iOS and is the only way to see both platforms in one picker. Note that the native mode needs a locally installed Appium with both drivers.
+In `docs/local-development.md`, add the host table: Windows and Linux drive Android only; macOS drives Android and iOS and is the only way to see both platforms in one picker. Note that macOS needs a locally installed Appium with both drivers.
 
 - [ ] **Step 3: Run the docs check**
 
@@ -608,11 +607,11 @@ With a booted simulator and a locally running Appium: `visto doctor --platform i
 
 With the phone attached, WebDriverAgent installed and trusted: repeat Step 2's sequence. Confirm that a refused session leaves a lease the operator can recover following `docs/ios-setup.md`, and that an unreachable Appium server produces an infrastructure failure rather than a verdict.
 
-- [ ] **Step 4: Android re-check in native mode**
+- [ ] **Step 4: Android re-check on macOS**
 
-One short Android run with the backend started natively on macOS and a locally
-installed Appium, to verify the mode the single picker depends on. Record the
-result; a failure here is a finding about the native mode, not about iOS.
+One short Android run with the backend running on macOS and a locally
+installed Appium with both drivers, to verify the setup the single picker depends
+on. Record the result; a failure here is a finding about that setup, not about iOS.
 
 - [ ] **Step 5: Acceptance scenario on both targets**
 

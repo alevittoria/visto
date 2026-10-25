@@ -277,7 +277,7 @@ const PLATFORM_NAMES: Record<Platform, string> = { android: 'Android', ios: 'iOS
 
 const SERIAL = /^[A-Za-z0-9._:-]{1,256}$/;
 
-/** Validates GET /devices and POST /devices/refresh; unsafe entries are dropped, never rendered. */
+/** Validates GET /devices; unsafe entries are dropped, never rendered. */
 export function parseDevices(value: unknown): DeviceInventory {
   if (typeof value !== 'object' || value === null) throw new Error('Invalid device list response.');
   const v = value as Record<string, unknown>;

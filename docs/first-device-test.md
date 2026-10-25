@@ -1,14 +1,14 @@
 # First device tests
 
 The headless CLI drives the same single-conversation runner as the web console.
-It runs inside the Docker stack or the dev container, against the containerized
-Appium. See [Docker and dev container](docker.md) to start either one and to
-connect a phone.
+It needs Appium running (see [installation](local-development.md)); the backend
+and the console are not required. Run every command from the repository root,
+so the CLI shares run history and device leases with the console.
 
 ## Prepare device and provider
 
 Use an authorized Android 8/API26 or newer device with USB debugging enabled and
-visible to the `appium` container (`docker compose exec appium adb devices`).
+listed as `device` by `adb devices` (see [Android setup](android-setup.md#connect-a-device)).
 Unlock it and manually open the target application in its starting state. Use
 test accounts/data. Appium may install automation helper APKs on first
 connection; it does not install/reset the target app. Keep other automation
@@ -24,35 +24,30 @@ action details and clarifications leave this computer for inference. See
 
 ## First run on iOS
 
-iOS needs the backend or CLI started natively on macOS, not in the containers.
-Complete [iOS setup](ios-setup.md) first: install the pinned Appium stack, boot
-the simulator or prepare the phone, and install WebDriverAgent. Check the
-toolchain with `python -m visto.cli doctor --platform ios --device <udid>`, then
-run an observation test as below with `--platform ios`:
+iOS needs macOS. Complete [iOS setup](ios-setup.md) first: install the pinned
+Appium stack, boot the simulator or prepare the phone, and install
+WebDriverAgent. Check the toolchain with
+`uv run --project backend --locked --no-sync python -m visto.cli doctor --platform ios --device <udid>`,
+then run an observation test as below with `--platform ios`:
 
 ```sh
-python -m visto.cli run --platform ios --device <udid> --observe-only \
+uv run --project backend --locked --no-sync python -m visto.cli run --platform ios --device <udid> --observe-only \
   --goal "Observe the current screen and check whether it shows the home screen. Conclude from visible evidence."
 ```
 
-Run these commands from the repository root so the lease directory is shared
-with the console. The iOS path has local checks only; no simulator or phone run
+The iOS path has local checks only; no simulator or phone run
 has been recorded, so treat a first iOS run as the first live evidence rather
 than a confirmation.
 
 ## Run a first observation test
 
-In the full stack the CLI runs in the backend container (`-it` keeps the terminal
-interactive for questions):
-
 ```sh
-docker compose exec -it backend python -m visto.cli run --device <serial> --observe-only \
+uv run --project backend --locked --no-sync python -m visto.cli run --device <serial> --observe-only \
   --goal "Observe the current screen and check whether it shows the home screen of the app under test. Conclude from visible evidence."
 ```
 
-In the dev container terminal, from the repository root, use
-`uv run --project backend --locked --no-sync python -m visto.cli` instead of
-`python -m visto.cli`.
+The commands below shorten `uv run --project backend --locked --no-sync python -m visto.cli`
+to `visto`; type the full form, or define an alias or shell function.
 
 `--observe-only` supplies an empty mutation capability list. The AI can observe,
 wait, ask and conclude; tap/swipe/text/key requests are rejected technically before
@@ -62,7 +57,7 @@ For a navigation test, manually return to a known starting screen and omit
 `--observe-only`. For example (`Sample Notes` is a placeholder):
 
 ```sh
-docker compose exec -it backend python -m visto.cli run --device <serial> \
+visto run --device <serial> \
   --goal "In Sample Notes, open the About page and verify that the app version is visibly listed." \
   --constraint "Do not modify data or install applications."
 ```
@@ -95,11 +90,11 @@ After cleanup failure, output preserves any durable conclusion, adds
 means a passed test. `reported_usage` covers persisted decisions only; failed or
 unrecorded requests may incur additional unknown usage.
 
-History lives in `.work/runs/runs.sqlite3`, screenshots in `.work/runs/artifacts/`
-(inside the stack's or dev container's volume). Inspect without key/device access:
+History lives in `.work/runs/runs.sqlite3`, screenshots in `.work/runs/artifacts/`.
+Inspect without key/device access:
 
 ```sh
-docker compose exec backend python -m visto.cli inspect --run-id <run-id>
+visto inspect --run-id <run-id>
 ```
 
 This prints original request, decisions, evidence references, receipts and terminal.
@@ -112,8 +107,8 @@ capture, 10000ms maximum requested wait. These technical budgets do not determin
 semantic verdicts. Overrides and the configuration-only doctor:
 
 ```sh
-docker compose exec backend python -m visto.cli run --help
-docker compose exec backend python -m visto.cli doctor --device <serial>
+visto run --help
+visto doctor --device <serial>
 ```
 
 Doctor contacts neither provider nor device. CLI and console share

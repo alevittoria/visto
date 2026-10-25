@@ -14,7 +14,7 @@ runtime uses one conversational AI; it does not run this team against the device
 | Android | Device observation, sessions and typed commands | [android](roles/android.md) |
 | Frontend | React console, controls and evidence inspection | [frontend](roles/frontend.md) |
 | QA | Independent review, protocol checks and labelled evaluation | [qa](roles/qa.md) |
-| DevOps | Local setup, containers, dependency locks and developer checks | [devops](roles/devops.md) |
+| DevOps | Local setup, dependency locks and developer checks | [devops](roles/devops.md) |
 
 A role is a brief, not a permanently running process or a separate model. Roles
 can be reused for sequential tasks. File ownership is assigned per task.

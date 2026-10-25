@@ -19,7 +19,7 @@ dated progress notes here.
   rotation validation, typed commands (`tap`, `long_press`, `swipe`, `type_text`
   as one whole-value set, `back`, `home`, `enter`) and fail-closed
   repository-scoped device leases. Device inventory via a fixed, bounded
-  `adb devices -l`; optional bridge to a host adb server for USB phones.
+  `adb devices -l`; the backend starts the adb server at startup.
 - **iOS adapter**: Appium/XCUITest sessions bound to a simulator or an attached
   device, the same seven typed commands, and `back` as a dispatch-only swipe from
   the left screen edge that may not navigate — the AI judges the effect from the
@@ -50,12 +50,11 @@ dated progress notes here.
   report export. One device picker lists both platforms with the platform
   visible, selectability follows each platform's own state vocabulary, and a run
   cannot be submitted until a device list has confirmed the device's platform.
-- **Environment**: Docker Compose stack and VS Code dev container drive Android
-  only, because a Linux container cannot reach Xcode or a USB-attached iPhone and
-  there is no iOS equivalent of the host adb bridge. The backend started natively
-  on macOS drives both platforms and is the only mode that shows them in one
-  picker; its pinned Appium stack lives beside the container's. Root `.env` for
-  credentials (process environment takes precedence). See
+- **Environment**: Appium, the backend and the console run as local processes.
+  Windows and Linux drive Android with the pinned `tools/appium` package; macOS
+  drives both platforms in one picker with `tools/appium/macos`, which adds the
+  XCUITest driver. Root `.env` for credentials (process environment takes
+  precedence). See [installation](../local-development.md) and
   [iOS setup](../ios-setup.md).
 
 ## Verification state
@@ -84,8 +83,8 @@ dated progress notes here.
   the provider's limits and maps coordinates back. That fix has local checks
   only and has not been re-run on a device; it also changes the image sent for
   Android. The simulator path, the `connected` device mapping, rotation on
-  hardware and the acceptance scenario remain unexercised. The macOS-native Android path
-  has not been re-checked either, and that mode is what the single picker needs.
+  hardware and the acceptance scenario remain unexercised. Android on macOS has not
+  been re-checked either, and that setup is what the single picker needs.
 
 ## Known issues
 
@@ -107,7 +106,7 @@ dated progress notes here.
 ## Next work
 
 1. Independent QA review of the console features (device picker, model choice,
-   deletion, statistics, dictation), Docker setup and Android commands.
+   deletion, statistics, dictation), installation guide and Android commands.
 2. Live checks for the scenarios listed under "Not yet exercised live".
 3. Fix the known issues above, starting with the false-pass pattern.
 4. Repeated labelled evaluation following the
@@ -117,5 +116,7 @@ dated progress notes here.
    simulator path first, then the attached device, then the acceptance scenario on
    both, following [iOS setup](../ios-setup.md) and
    [first device test](../first-device-test.md).
-6. Re-check Android live with the backend started natively on macOS, since that
-   mode is what serves both platforms from one picker.
+6. Re-check Android live with the backend on macOS, since that setup serves
+   both platforms from one picker.
+7. Live check of the installation guide on a clean Windows or Linux host: Appium
+   from `tools/appium` with a local Android SDK and JDK, followed step by step.

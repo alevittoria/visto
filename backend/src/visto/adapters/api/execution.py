@@ -75,13 +75,6 @@ async def devices(request: Request) -> dict:
     return await service(request).devices()
 
 
-@router.post("/devices/refresh")
-async def refresh_devices(request: Request) -> dict:
-    """Operator refresh: connect host USB devices (when configured), then list."""
-    require_local_write(request)
-    return await service(request).devices(connect=True)
-
-
 @router.post("/transcriptions")
 async def transcription(request: Request) -> dict:
     """Raw recorded audio in, transcript out; the operator reviews it before a run."""

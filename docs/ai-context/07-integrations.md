@@ -5,8 +5,9 @@ See [architecture](03-architecture.md) and [data model](06-data-model.md).
 
 ## Android device adapter
 
-Appium/UiAutomator2 is the Android backend; scoped ADB operations are used for
-device inventory and the host adb bridge. It translates typed commands, captures screenshot bytes and
+Appium/UiAutomator2 is the Android backend; a fixed, bounded `adb devices -l`
+provides the device inventory, and the backend runs a bounded `adb start-server`
+at startup so that inventory finds the server ready. It translates typed commands, captures screenshot bytes and
 reports technical receipts. It does not inspect text labels to declare progress
 or test success. Accessibility data, if later added, is optional observation
 content, never a second deterministic semantic verifier.
@@ -24,7 +25,7 @@ documentation or unit tests. An iOS backend implements the same port.
 
 The iOS adapter implements the same port over Appium's XCUITest driver and
 WebDriverAgent, sharing the Appium session core with Android. It runs only with
-the backend started natively on macOS; the containers stay Android-only. iOS
+the backend running on macOS. iOS
 inventory uses fixed, read-only `xcrun simctl` and `xcrun devicectl` commands.
 Visto never boots a simulator, builds WebDriverAgent or shuts a device down; the
 XCUITest driver will boot or build if a session targets something not ready (see

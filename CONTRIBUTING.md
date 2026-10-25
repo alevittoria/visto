@@ -36,14 +36,11 @@ declined, so ask first if in doubt:
 
 ## Development setup
 
-Use the VS Code dev container described in [docs/docker.md](docs/docker.md); it
-provides the pinned Python, uv, Node and pnpm and the containerized Appium
-(versions in [docs/local-development.md](docs/local-development.md)).
+Install the pinned tools and dependencies as described in
+[docs/local-development.md](docs/local-development.md), then run the checks:
 
 ```sh
-uv sync --project backend --locked --all-groups
-pnpm --dir frontend install --frozen-lockfile
-python3 scripts/verify.py
+python scripts/verify.py
 ```
 
 `scripts/verify.py` runs the backend tests, Ruff lint and format checks, a

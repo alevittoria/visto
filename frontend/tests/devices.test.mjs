@@ -15,8 +15,8 @@ test('device list parsing drops malformed or unsafe entries', () => {
 });
 
 test('refresh notes keep only strings and default to none', () => {
-  assert.deepEqual(parseDevices({ available: true, devices: [], notes: ['Host adb is not reachable', 3, null] }).notes,
-    ['Host adb is not reachable']);
+  assert.deepEqual(parseDevices({ available: true, devices: [], notes: ['xcrun was not found', 3, null] }).notes,
+    ['xcrun was not found']);
   assert.deepEqual(parseDevices({ available: true, devices: [] }).notes, []);
 });
 

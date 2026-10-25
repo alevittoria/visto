@@ -153,11 +153,12 @@ def test_list_devices_runs_both_fixed_commands_without_a_shell(monkeypatch):
         return subprocess.CompletedProcess(command, 0, stdout=text.encode())
 
     monkeypatch.setattr(inventory.subprocess, "run", fake_run)
-    devices = asyncio.run(list_devices(Path("/x/xcrun")))
+    xcrun = Path("/x/xcrun")
+    devices = asyncio.run(list_devices(xcrun))
     assert len(devices) == 4 and devices[-1].state == "connected"
     assert [c[0][:4] for c in calls] == [
-        ["/x/xcrun", "simctl", "list", "devices"],
-        ["/x/xcrun", "devicectl", "list", "devices"],
+        [str(xcrun), "simctl", "list", "devices"],
+        [str(xcrun), "devicectl", "list", "devices"],
     ]
     assert all(o["stdin"] == subprocess.DEVNULL and "shell" not in o for _, o in calls)
 

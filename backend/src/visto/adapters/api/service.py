@@ -93,7 +93,6 @@ class ExecutionService:
         ios_device_lister: Callable[[], Awaitable[tuple[AttachedDevice, ...]]] | None = None,
         ios_physical_device_lister: Callable[[], Awaitable[tuple[AttachedDevice, ...]]]
         | None = None,
-        device_connector: Callable[[], Awaitable[tuple[str, ...]]] | None = None,
         transcriber: Callable[[str, bytes, str], Awaitable[str]] = transcribe,
     ):
         self.settings = settings
@@ -102,8 +101,6 @@ class ExecutionService:
         self.device_lister = device_lister
         self.ios_device_lister = ios_device_lister
         self.ios_physical_device_lister = ios_physical_device_lister
-        # Optional: bridges host USB devices before an explicit refresh lists them.
-        self.device_connector = device_connector
         self.transcriber = transcriber
         self.transcribing = False
         self.inventory_lock = asyncio.Lock()
@@ -215,12 +212,8 @@ class ExecutionService:
             self.transcribing = False
         return {"text": text, "model": TRANSCRIPTION_MODEL}
 
-    async def devices(self, *, connect: bool = False):
-        """Inventory for selection; a run still re-checks the device.
-
-        `connect` (explicit operator refresh) first bridges host USB devices, which
-        may restart adbd on a phone, so it is skipped while a run owns a device.
-        """
+    async def devices(self):
+        """Inventory for selection; a run still re-checks the device."""
         listers = [
             lister
             for lister in (
@@ -232,19 +225,9 @@ class ExecutionService:
         ]
         if not listers:
             return {"available": False, "devices": [], "error": "Device listing is not configured"}
-        notes: tuple[str, ...] = ()
-
-        async def connect_step():  # Called with the inventory lock held.
-            nonlocal notes
-            if connect and self.device_connector is not None:
-                if self.active is not None:
-                    notes = ("Host USB devices are not connected while a run is active.",)
-                else:
-                    notes = await self.device_connector()
 
         async def adb_source():
             async with self.inventory_lock:  # One adb client process at a time.
-                await connect_step()
                 return await self.device_lister()
 
         async def listed(source):
@@ -253,9 +236,6 @@ class ExecutionService:
             except InventoryUnavailable as error:
                 return error
 
-        if not self.device_lister:
-            async with self.inventory_lock:
-                await connect_step()
         # Sources run concurrently so the worst case is the slowest one, not their sum.
         sources = [
             source
@@ -279,9 +259,9 @@ class ExecutionService:
                 "available": False,
                 "devices": [],
                 "error": "; ".join(dict.fromkeys(problems)),
-                "notes": list(notes),
+                "notes": [],
             }
-        notes = (*notes, *dict.fromkeys(problems))  # A shared cause is noted once.
+        notes = tuple(dict.fromkeys(problems))  # A shared cause is noted once.
         return {
             "available": True,
             "devices": [

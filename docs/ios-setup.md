@@ -2,7 +2,7 @@
 
 The iOS adapter drives an iOS Simulator or a USB-attached iPhone through Appium's
 XCUITest driver and WebDriverAgent, using the same W3C wire code as Android. It
-needs a Mac with Xcode, and the backend started natively on that Mac.
+needs a Mac with Xcode, with the backend running on that Mac.
 
 ## Evidence
 
@@ -16,16 +16,10 @@ unconfirmed until you run them. A run on iOS is not a validated acceptance.
 
 ## Where iOS runs
 
-| Mode | Android | iOS |
-|---|---|---|
-| Docker Compose stack, dev container | yes | no |
-| Backend started natively on macOS | yes | yes |
-
-A Linux container cannot reach Xcode, `simctl` or a USB iPhone, and there is no
-iOS counterpart of the host adb bridge. Only the native mode shows both
-platforms in one device list. It therefore also drives Android, through a
-locally installed Appium that has both drivers and a local `adb`. See
-[local development](local-development.md).
+iOS needs macOS with Xcode. On a Mac the same backend lists Android and iOS
+devices in one picker, through one Appium with both drivers and the local Android
+SDK. Follow [installation](local-development.md) for the common steps, using
+`tools/appium/macos` as the Appium package; this page adds what iOS needs.
 
 ## Prerequisites
 
@@ -44,14 +38,13 @@ locally installed Appium that has both drivers and a local `adb`. See
 
 `tools/appium/macos/package.json` pins Appium, the UiAutomator2 driver and the
 XCUITest driver to exact versions, and `tools/appium/macos/pnpm-lock.yaml` locks
-the full dependency tree. The container's own manifest
-(`tools/appium/package.json`) stays Android-only.
+the full dependency tree. `tools/appium/package.json`, used on Windows and
+Linux, has only the Android driver.
 
 Run pnpm from inside that directory, not with `--dir` from the repository root:
 corepack picks the pnpm version from the `packageManager` field of the current
-directory, and the root has none. The flags match the container's install, where
-Appium's install script is skipped and drivers are discovered from a hoisted
-`node_modules`.
+directory, and the root has none. Appium's install script is skipped and the
+drivers are discovered from a hoisted `node_modules`.
 
 ```sh
 cd tools/appium/macos
@@ -79,8 +72,8 @@ stays usable.
 Run from that directory, Appium finds both drivers without `APPIUM_HOME`;
 `node node_modules/appium/index.js driver list --installed` lists them. Appium
 listens on `127.0.0.1:4723`, which is the default Appium URL of the backend and
-the CLI. Do not run this and the Docker `appium` service at once; they would
-collide on the port. Check each driver's own prerequisites with
+the CLI. Run only one Appium on that port at a time. Check each driver's own
+prerequisites with
 `pnpm doctor:ios` and `pnpm doctor:android` from the same directory.
 
 ### Behind a TLS-inspecting proxy
@@ -98,8 +91,8 @@ from the System keychain into a PEM file, then point each runtime at it:
   `/opt/homebrew/etc/openssl@3/cert.pem`) followed by the proxy certificates.
 
 Rebuild the bundle when the proxy's certificate authority or the base roots
-change. The container stack takes the same certificate through
-[docker/certs](../docker/certs/README.md).
+change. On Windows and Linux, export the proxy certificates from the system
+certificate store instead; the two variables work the same way.
 
 ## Signing values (physical phone)
 
@@ -223,9 +216,9 @@ a simulator-only setup exits 0; check those two fields yourself before using a
 phone. Exit code 2 means one of the required items is missing.
 
 The console and `GET /readiness` expose `platforms`. It lists which device
-sources are configured on the server, not what the machine can drive. Under
-Docker it still names iOS; the device list then carries a note that `xcrun` was
-not found.
+sources are configured on the server, not what the machine can drive. On
+Windows or Linux it still names iOS; the device list then carries a note that
+`xcrun` was not found.
 
 ## Start a run
 

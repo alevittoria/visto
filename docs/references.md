@@ -57,7 +57,7 @@ establish live integration acceptance.
   [UiAutomator2 driver](https://github.com/appium/appium-uiautomator2-driver),
   [W3C WebDriver](https://www.w3.org/TR/webdriver2/): explicit serial capability,
   session lifecycle, screenshots and touch pointer actions. Appium 3 and current
-  UiAutomator2 are installed in the appium container, not globally.
+  UiAutomator2 are installed from the locked `tools/appium` package, not globally.
 - [Appium rotation](https://appium.io/docs/en/latest/reference/api/appium/#getappiumrotation),
   [WebDriver wire methods](https://appium.io/docs/en/latest/reference/api/webdriver/):
   live frame checks; UiAutomator2 `mobile: pressKey` accepts allowlisted Android keys
@@ -144,37 +144,14 @@ capture succeeds. Use the native route as an explicit pinned-stack compatibility
 exception, retaining strict response validation and finite deadlines. Do not
 retry arbitrary failures or infer orientation.
 
-## Docker stack and dev container
+## adb
 
-Behaviour below was verified empirically with Docker Desktop; the pages are the
-governing official references.
-
-- [Compose `network_mode: service:<name>`](https://docs.docker.com/reference/compose-file/services/#network_mode):
-  `backend`/`appium` join the `net` service namespace so Appium stays loopback-only.
-  A joined container keeps the namespace of the container it joined; recreating
-  that owner orphans it, hence the stable `net` owner.
-- [Compose long-syntax bind mounts](https://docs.docker.com/reference/compose-file/services/#volumes):
-  `bind.create_host_path: false` makes a missing `.env` an error instead of a
-  host directory.
-- [Dockerfile reference](https://docs.docker.com/reference/dockerfile/) and
-  [BuildKit cache mounts](https://docs.docker.com/build/cache/optimize/#use-cache-mounts):
-  `COPY --chmod`, `RUN --mount=type=cache` for the uv cache.
-- [uv in Docker](https://docs.astral.sh/uv/guides/integration/docker/):
-  `COPY --from=ghcr.io/astral-sh/uv:<version>`, `UV_PROJECT_ENVIRONMENT`,
-  `--no-install-project` dependency layer, `UV_LINK_MODE=copy`.
-- [Android SDK repository manifest](https://dl.google.com/android/repository/repository2-3.xml):
-  archive names and SHA-1 checksums for platform-tools 37.0.1 and build-tools 37.
 - [adb (Android Debug Bridge)](https://developer.android.com/tools/adb):
-  `pair`/`connect` for wireless debugging (Android 11+), single server per host;
-  `-H`/`-P` select the server, `tcpip PORT` restarts adbd on TCP (also in
-  `adb --help` of platform-tools 37).
-- [Docker Desktop networking how-tos](https://docs.docker.com/desktop/features/networking/networking-how-tos/):
-  `host.docker.internal` resolves to the host for container-to-host connections.
-  That it also reaches the host adb server bound to 127.0.0.1 is not stated there;
-  it is observed on Windows with Docker Desktop (macOS not checked).
-- [Dev Container specification](https://containers.dev/implementors/json_reference/):
-  `dockerComposeFile`, `service`, `runServices`, `workspaceFolder`,
-  `postCreateCommand`, `forwardPorts`, `shutdownAction`.
+  `devices -l` for the inventory, `pair`/`connect` for wireless debugging
+  (Android 11+), single server per host.
+
+## Price list
+
 - [AI Pricing Guru API](https://www.aipricing.guru/api-docs/):
   `GET https://www.aipricing.guru/api/pricing.json`, no authentication, static
   JSON refreshed daily at 04:00 UTC from provider price pages; `models[]` with
@@ -290,8 +267,8 @@ governing official references.
   the version pinned in `tools/appium/macos/package.json` beside Appium 3.8.0 and
   UiAutomator2 8.7.0. Checked: the GitHub releases page listed 12.19.1 as the latest
   release, and its manifest declares the peer dependency `appium` `^3.0.0-rc.2` (so
-  Appium 3.8.0 satisfies it) and the same Node engine range as the container manifest.
-  Also checked: a frozen-lockfile install with the container's flags completes and
+  Appium 3.8.0 satisfies it) and the same Node engine range as `tools/appium/package.json`.
+  Also checked: a frozen-lockfile install with the documented flags completes and
   Appium lists both drivers as installed. Not checked: that the driver runs a session,
   or any compatibility with a given Xcode release.
 - [XCUITest device setup](https://appium.github.io/appium-xcuitest-driver/latest/getting-started/device-setup/):
