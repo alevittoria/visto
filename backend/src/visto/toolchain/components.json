@@ -1,0 +1,156 @@
+{
+  "format": 1,
+  "components": {
+    "node": {
+      "version": "24.19.0",
+      "hosts": {
+        "win-x64": [
+          {
+            "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-win-x64.zip",
+            "checksum": "sha256:57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73",
+            "kind": "zip",
+            "strip": "node-v24.19.0-win-x64",
+            "dest": "."
+          }
+        ],
+        "macos-arm64": [
+          {
+            "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-darwin-arm64.tar.xz",
+            "checksum": "sha256:3f1cf157479c1480352083105e13faf9d008ede98e7e157746b6df940d197b94",
+            "kind": "tar.xz",
+            "strip": "node-v24.19.0-darwin-arm64",
+            "dest": "."
+          }
+        ],
+        "macos-x64": [
+          {
+            "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-darwin-x64.tar.xz",
+            "checksum": "sha256:d35e95230f46f6f0751df497c56622c6735e05d5e1fb1630996a005b9d328fe4",
+            "kind": "tar.xz",
+            "strip": "node-v24.19.0-darwin-x64",
+            "dest": "."
+          }
+        ],
+        "linux-x64": [
+          {
+            "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-x64.tar.xz",
+            "checksum": "sha256:14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647",
+            "kind": "tar.xz",
+            "strip": "node-v24.19.0-linux-x64",
+            "dest": "."
+          }
+        ]
+      }
+    },
+    "jdk": {
+      "version": "17.0.20.1+1",
+      "hosts": {
+        "win-x64": [
+          {
+            "url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_windows_hotspot_17.0.20.1_1.zip",
+            "checksum": "sha256:e53a79c3c3d86865bd7e787903884331068e71321714ffd44f145785affc7cb0",
+            "kind": "zip",
+            "strip": "jdk-17.0.20.1+1",
+            "dest": "."
+          }
+        ],
+        "macos-arm64": [
+          {
+            "url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_aarch64_mac_hotspot_17.0.20.1_1.tar.gz",
+            "checksum": "sha256:196d13ba5f10414bef7f6a05a9b3f00edacb18ebacef2b99485db9e2ee18f0e8",
+            "kind": "tar.gz",
+            "strip": "jdk-17.0.20.1+1",
+            "dest": "."
+          }
+        ],
+        "macos-x64": [
+          {
+            "url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_mac_hotspot_17.0.20.1_1.tar.gz",
+            "checksum": "sha256:c01975da12ed4235250ff891fe8bba73a9e73037d444b269c9d0922b5dbc8e0a",
+            "kind": "tar.gz",
+            "strip": "jdk-17.0.20.1+1",
+            "dest": "."
+          }
+        ],
+        "linux-x64": [
+          {
+            "url": "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.20.1%2B1/OpenJDK17U-jdk_x64_linux_hotspot_17.0.20.1_1.tar.gz",
+            "checksum": "sha256:3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e",
+            "kind": "tar.gz",
+            "strip": "jdk-17.0.20.1+1",
+            "dest": "."
+          }
+        ]
+      }
+    },
+    "android-sdk": {
+      "version": "pt37.0.1-bt37.0.0",
+      "hosts": {
+        "win-x64": [
+          {
+            "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-win.zip",
+            "checksum": "sha1:e03e78b1d80b396f1c3358e31251cb31740e1110",
+            "kind": "zip",
+            "strip": "platform-tools",
+            "dest": "platform-tools"
+          },
+          {
+            "url": "https://dl.google.com/android/repository/build-tools_r37_windows.zip",
+            "checksum": "sha1:e9c97e26b5b5678002e9d3fed632c841ae62d99f",
+            "kind": "zip",
+            "strip": "android-37.0",
+            "dest": "build-tools/37.0.0"
+          }
+        ],
+        "macos-arm64": [
+          {
+            "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-darwin.zip",
+            "checksum": "sha1:6ae73f4de6452dc57e62ec02b68eed92a4c21661",
+            "kind": "zip",
+            "strip": "platform-tools",
+            "dest": "platform-tools"
+          },
+          {
+            "url": "https://dl.google.com/android/repository/build-tools_r37_macosx.zip",
+            "checksum": "sha1:eb080751b2b2028eb3604f571027d6f7b3c46321",
+            "kind": "zip",
+            "strip": "android-37.0",
+            "dest": "build-tools/37.0.0"
+          }
+        ],
+        "macos-x64": [
+          {
+            "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-darwin.zip",
+            "checksum": "sha1:6ae73f4de6452dc57e62ec02b68eed92a4c21661",
+            "kind": "zip",
+            "strip": "platform-tools",
+            "dest": "platform-tools"
+          },
+          {
+            "url": "https://dl.google.com/android/repository/build-tools_r37_macosx.zip",
+            "checksum": "sha1:eb080751b2b2028eb3604f571027d6f7b3c46321",
+            "kind": "zip",
+            "strip": "android-37.0",
+            "dest": "build-tools/37.0.0"
+          }
+        ],
+        "linux-x64": [
+          {
+            "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-linux.zip",
+            "checksum": "sha1:477254aa5f903c15cf51001717bdf347fb6b53e0",
+            "kind": "zip",
+            "strip": "platform-tools",
+            "dest": "platform-tools"
+          },
+          {
+            "url": "https://dl.google.com/android/repository/build-tools_r37_linux.zip",
+            "checksum": "sha1:70954e99f4c3d9d46ee70fa32624672fe7cd6ebe",
+            "kind": "zip",
+            "strip": "android-37.0",
+            "dest": "build-tools/37.0.0"
+          }
+        ]
+      }
+    }
+  }
+}

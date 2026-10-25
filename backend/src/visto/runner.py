@@ -1,6 +1,6 @@
 """Composition for the opt-in headless runner; construction never contacts a device."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -9,12 +9,14 @@ from visto.adapters.ai import INSTRUCTION_VERSIONS, OpenAIAgent
 from visto.adapters.android import AppiumDevice
 from visto.adapters.devices import Platform
 from visto.adapters.ios.device import XCUITestDevice
+from visto.adapters.ios.signing import IOSSigning
 from visto.adapters.storage import LocalArtifactStore, SQLiteRunStore
 from visto.application.loop import RunLoop
 from visto.application.runtime import MutableRunControl, SystemClock
 from visto.domain.commands import CommandKind
 from visto.domain.models import Goal, ModelIdentity, RunConfiguration, RunLimits
 from visto.domain.run import Run
+from visto.home import default_home
 
 # The one place a platform selects its device adapter.
 DEVICE_ADAPTERS = {Platform.ANDROID: AppiumDevice, Platform.IOS: XCUITestDevice}
@@ -27,9 +29,10 @@ class RunnerSettings:
     appium_url: str = "http://127.0.0.1:4723"
     model: str = "gpt-6-luna"
     limits: RunLimits = RunLimits(1200000, 60, 90, 60000, 10000)
-    lease_directory: Path = Path(".work/device-leases")
+    lease_directory: Path = field(default_factory=lambda: default_home().leases)
     capabilities: tuple[CommandKind, ...] = tuple(CommandKind)
     platform: Platform = Platform.ANDROID
+    ios_signing: IOSSigning = IOSSigning()
 
     def __post_init__(self):
         if not self.device_id.strip() or not self.model.strip():
@@ -53,10 +56,12 @@ def build_runtime(settings: RunnerSettings, api_key: str, control: MutableRunCon
     root = settings.data_directory.resolve()
     artifacts = LocalArtifactStore(root / "artifacts")
     store = SQLiteRunStore(root / "runs.sqlite3", artifacts)
+    options = {"signing": settings.ios_signing} if settings.platform is Platform.IOS else {}
     device = DEVICE_ADAPTERS[settings.platform](
         settings.appium_url,
         settings.lease_directory.resolve(),
         request_timeout_ms=settings.limits.max_command_timeout_ms,
+        **options,
     )
     return RunLoop(device, agent, store, artifacts, SystemClock(), control)
 

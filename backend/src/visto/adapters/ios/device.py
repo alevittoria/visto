@@ -2,7 +2,6 @@
 
 import asyncio
 import base64
-import os
 import time
 from pathlib import Path
 from urllib.parse import quote
@@ -11,6 +10,7 @@ from visto.adapters.appium.png import png_size
 from visto.adapters.appium.session import AppiumSession
 from visto.adapters.appium.wire import MAX_RESPONSE, HttpWire, Wire
 from visto.adapters.ios.geometry import Frame, frame, to_points
+from visto.adapters.ios.signing import IOSSigning
 from visto.application.ports import PortError
 from visto.application.runtime import utc_now
 from visto.domain.commands import Back, Enter, Home, LongPress, Swipe, Tap, TypeText
@@ -20,17 +20,9 @@ from visto.domain.models import CapturedImage, DeviceLease
 ROTATIONS = (0, 90, 180, 270)
 # Duration of the left-edge back gesture; long enough for iOS to recognise a drag.
 BACK_SWIPE_MS = 300
-# WebDriverAgent signing values; secrets, so they are read here and never logged.
-SIGNING = (
-    ("appium:xcodeOrgId", "VISTO_IOS_TEAM_ID"),
-    ("appium:xcodeSigningId", "VISTO_IOS_SIGNING_ID"),
-    ("appium:updatedWDABundleId", "VISTO_IOS_WDA_BUNDLE_ID"),
-)
-_DISABLED = ("", "0", "false", "no")
 
-
-def _setting(name: str) -> str:
-    return os.environ.get(name, "").strip()
+# Immutable default: no signing values, no prebuilt-WDA claim.
+UNSIGNED = IOSSigning()
 
 
 class XCUITestDevice(AppiumSession):
@@ -41,6 +33,7 @@ class XCUITestDevice(AppiumSession):
         server_url: str,
         lease_directory: Path,
         *,
+        signing: IOSSigning = UNSIGNED,
         request_timeout_ms: int = 30000,
         cleanup_timeout_ms: int = 5000,
         wire: Wire | None = None,
@@ -53,6 +46,7 @@ class XCUITestDevice(AppiumSession):
             request_timeout_ms=request_timeout_ms,
             cleanup_timeout_ms=cleanup_timeout_ms,
         )
+        self._signing = signing
         # Point geometry of the last capture, paired with the image it was derived from:
         # a frame can never convert coordinates for a different screenshot.
         self._frame: tuple[CapturedImage, Frame] | None = None
@@ -69,19 +63,9 @@ class XCUITestDevice(AppiumSession):
             "appium:shouldTerminateApp": False,
             "appium:newCommandTimeout": 120,
         }
-        # A run never builds WebDriverAgent; building and installing it is an operator
-        # pre-step, and the operator declares it by setting this variable.
-        if _setting("VISTO_IOS_PREBUILT_WDA").lower() not in _DISABLED:
-            capabilities["appium:usePrebuiltWDA"] = True
-        # The driver opens WebDriverAgent by its resolved path, so Xcode's default
-        # derived data for a build made through a symlinked path is not found.
-        derived_data = _setting("VISTO_IOS_WDA_DERIVED_DATA")
-        if derived_data:
-            capabilities["appium:derivedDataPath"] = str(Path(derived_data).expanduser())
-        for capability, variable in SIGNING:
-            value = _setting(variable)
-            if value:
-                capabilities[capability] = value
+        # Signing and the prebuilt-WDA flag come from the stored settings; a run never
+        # builds WebDriverAgent.
+        capabilities.update(self._signing.capabilities())
         return capabilities
 
     async def acquire(self, run_id: str, device_id: str, timeout_ms: int) -> DeviceLease:

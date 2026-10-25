@@ -9,7 +9,9 @@ import { ReadinessPanel } from './components/ReadinessPanel.tsx';
 import { NewRunForm } from './components/NewRunForm.tsx';
 import { RunList } from './components/RunList.tsx';
 import { RunView } from './components/RunView.tsx';
+import { SettingsView } from './components/SettingsView.tsx';
 import { StatsView } from './components/StatsView.tsx';
+import { settingsFromHash } from './settings.ts';
 import { statsFromHash } from './stats.ts';
 
 export interface ReadinessState { readiness: Readiness | null; connected: boolean; checking: boolean; checkedAt: number | null }
@@ -21,6 +23,7 @@ export function App() {
   const [runs, setRuns] = useState<RunsState>({ runs: [], error: null, loading: true, usage: null });
   const [selected, setSelected] = useState<string | null>(() => runIdFromHash(window.location.hash));
   const [showStats, setShowStats] = useState(() => statsFromHash(window.location.hash));
+  const [showSettings, setShowSettings] = useState(() => settingsFromHash(window.location.hash));
   const [form, setForm] = useState<RunForm>(() => emptyForm(DEFAULT_LIMITS));
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -46,7 +49,8 @@ export function App() {
       setReady({ readiness, connected: true, checking: false, checkedAt: Date.now() });
       if (!autoSelected.current) {
         autoSelected.current = true;
-        if (readiness.active_run_id && !runIdFromHash(window.location.hash)) select(readiness.active_run_id);
+        if (!readiness.provider_key_configured && !window.location.hash) openSettings();
+        else if (readiness.active_run_id && !runIdFromHash(window.location.hash)) select(readiness.active_run_id);
       }
     } catch {
       if (signal?.aborted) return;
@@ -80,7 +84,7 @@ export function App() {
   }, [loadReadiness, loadRuns]);
 
   useEffect(() => {
-    const onHash = () => { setSelected(runIdFromHash(window.location.hash)); setShowStats(statsFromHash(window.location.hash)); };
+    const onHash = () => { setSelected(runIdFromHash(window.location.hash)); setShowStats(statsFromHash(window.location.hash)); setShowSettings(settingsFromHash(window.location.hash)); };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
@@ -90,12 +94,21 @@ export function App() {
     if (window.location.hash !== hash) history.pushState(null, '', hash || window.location.pathname);
     setSelected(runId);
     setShowStats(false);
+    setShowSettings(false);
   }
 
   function openStats() {
     if (window.location.hash !== '#stats') history.pushState(null, '', '#stats');
     setSelected(null);
     setShowStats(true);
+    setShowSettings(false);
+  }
+
+  function openSettings() {
+    if (window.location.hash !== '#settings') history.pushState(null, '', '#settings');
+    setSelected(null);
+    setShowStats(false);
+    setShowSettings(true);
   }
 
   const refreshAll = useCallback(() => {
@@ -164,15 +177,18 @@ export function App() {
         </a>
         <span className="topbar-actions">
           <button type="button" className="secondary small" onClick={openStats} aria-pressed={showStats}>Stats</button>
+          <button type="button" className="secondary small" onClick={openSettings} aria-pressed={showSettings}>Settings</button>
           <span className="topbar-note">Local console</span>
         </span>
       </header>
-      <ReadinessPanel health={health} state={ready} onRefresh={refreshAll} onOpenRun={select} />
+      <ReadinessPanel health={health} state={ready} onRefresh={refreshAll} onOpenRun={select} onOpenSettings={openSettings} />
       <div className="layout">
         <RunList state={runs} selected={selected} activeRunId={ready.readiness?.active_run_id ?? null} deleting={deleting} deleteError={deleteError}
           onSelect={select} onNew={() => select(null)} onRefresh={() => void loadRuns()} onDelete={(runId) => void remove(runId)} onDeleteAll={() => void remove(null)} />
         <main className="workspace" id="main">
-          {showStats
+          {showSettings
+            ? <SettingsView onChanged={() => void loadReadiness()} />
+            : showStats
             ? <StatsView onOpenRun={select} />
             : selected
             ? <RunView key={selected} runId={selected} activeRunId={ready.readiness?.active_run_id ?? null} deleting={deleting}

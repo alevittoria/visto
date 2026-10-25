@@ -29,7 +29,8 @@ the backend running on macOS. iOS
 inventory uses fixed, read-only `xcrun simctl` and `xcrun devicectl` commands.
 Visto never boots a simulator, builds WebDriverAgent or shuts a device down; the
 XCUITest driver will boot or build if a session targets something not ready (see
-`VISTO_IOS_PREBUILT_WDA`, `VISTO_IOS_WDA_DERIVED_DATA` and the pre-step). Signing values come from `VISTO_IOS_*` environment variables.
+the prebuilt WebDriverAgent and derived data settings and the pre-step). Signing
+values come from the settings store, entered on the console's Settings page.
 Local checks only: no simulator or phone run is recorded. See
 [iOS setup](../ios-setup.md).
 
@@ -84,9 +85,10 @@ technical errors and terminal assessments without deriving its own verdict.
 The console polls; routes are in the [API contract](../api-contract.md).
 Do not expose raw filesystem paths, credentials or an unrestricted device shell.
 
-The composition root loads validated configuration and injects adapters, clock
-and stores. Secrets come from local environment or an explicit secret source;
-sample configuration contains placeholders. Use fake adapters and a controllable
+The composition root injects adapters, clock and stores, including the settings
+store of the Visto home and the managed toolchain paths (`adb`, WebDriverAgent
+project). The provider key comes only from the settings store, never from the
+process environment; sample configuration contains placeholders. Use fake adapters and a controllable
 clock by default in local tests. Billable inference and real-device evaluation
 are opt-in, require recorded prerequisites and must be reported separately.
 
@@ -102,10 +104,23 @@ allowlist and the latest `android-agent-v*` instructions, SQLite metadata and
 owned screenshot files, all through the declared ports. The Appium URL is
 loopback-only. `--observe-only` supplies no device mutation capabilities.
 
-Provider credentials come from the repository-root `.env` (or an explicit
-`--env-file`); process environment takes precedence. Only the key is resolved;
-values are literal and never evaluated or exported. The frontend never receives
-the provider key.
+Settings live in the Visto home: `settings.json` (price refresh, iOS signing)
+and `secrets.json` (provider key in plain text, mode 0600 on POSIX, user-profile
+ACL on Windows). Backend and CLI read them when used, so a change applies to the
+next run; a run snapshots what it uses at start. The settings API is write-only
+for the key and uses the console write guard. The frontend never receives the
+provider key.
+
+## Toolchain and processes
+
+`visto setup` installs pinned, checksum-verified Node, JDK and Android SDK tools,
+then Appium from the shipped lock, into `<home>/toolchain/` side by side; nothing
+system-wide changes. `visto start` realigns components, migrates the run database
+(with a backup), starts Appium as a child with `ANDROID_HOME`, `JAVA_HOME` and
+`PATH` set only in its environment, and serves API and console on loopback.
+Every Visto process registers in `<home>/instances/`; setup and data upgrades
+refuse while another is registered. Device leases are separate and stay
+fail-closed. See [installation](../local-development.md).
 
 Operator details: [first device test](../first-device-test.md),
 [Android setup](../android-setup.md), [iOS setup](../ios-setup.md), [provider setup](../provider-setup.md),

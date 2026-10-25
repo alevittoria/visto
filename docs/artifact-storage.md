@@ -1,5 +1,65 @@
 # Local evidence and run storage
 
+## Visto home
+
+Visto keeps everything it stores in one folder per user, the Visto home:
+`~/.visto/` (on Windows `%USERPROFILE%\.visto\`). Every command takes
+`--home <folder>` to use another one; nothing is read from environment variables.
+
+```text
+~/.visto/
+  settings.json                  preferences and iOS signing values (versioned format)
+  secrets.json                   the provider key, in plain text
+  data/
+    runs.sqlite3                 run history
+    runs.sqlite3.v<N>-<UTC timestamp>.bak   backup taken before a data upgrade
+    artifacts/                   screenshots and their metadata
+    prices.sqlite3               daily model price lists
+    device-leases/<sha256(serial)>.lease    device ownership markers
+  toolchain/                     Node, JDK, Android SDK tools, Appium (state.json lists the active versions)
+  logs/appium.log                Appium server output
+  instances/<pid>.json           running Visto processes using this home
+```
+
+`settings.json` and `secrets.json` are replaced atomically. On macOS and Linux both
+are created readable and writable by your user only (mode 0600), as are
+`logs/appium.log`, a newly created `runs.sqlite3` and every upgrade backup. The
+folders Visto creates (the home itself, `data/` or a missing `--data-dir`,
+`artifacts/`, `logs/` and `instances/`) are accessible by your user only (mode
+0700), so screenshots, leases and price lists inside them are private too. Visto
+never changes the mode of a folder or database that already exists, including a
+`--data-dir` you created yourself; check those permissions yourself. On Windows
+these files get no extra protection: they inherit the access rules of your user
+profile folder, which normally admit your account, administrators and the system.
+**The provider key is stored in plain text**, not in an operating-system credential store and not encrypted; anyone who can read your
+profile folder can read it. The key never appears in API responses, logs, reports
+or command output.
+
+`logs/appium.log` is private: Appium can log request bodies, entered text and
+device details. The `instances` folder lets setup and data upgrades refuse while
+another Visto process uses the home; it holds no run data.
+
+`visto run --data-dir <folder>` and `visto inspect --data-dir <folder>` read and
+write run history elsewhere; device leases always stay in the home's
+`data/device-leases`, so every process sharing a home shares them.
+
+### Data upgrades and backups
+
+The run database carries a schema version and is upgraded by numbered forward
+migrations when a Visto command (`start`, `run` or `inspect`) opens it, normally the
+first `visto start` after an upgrade. Each command refuses to upgrade an existing
+database while another Visto process uses the home.
+Before changing an existing database it is copied to
+`runs.sqlite3.v<N>-<UTC timestamp>.bak` beside it, where `<N>` is the version
+before the upgrade. A database written by a newer Visto is refused with a message
+rather than opened; install that newer Visto again or, with Visto stopped, copy
+the matching backup over `runs.sqlite3`. A backup holds the database only: the `artifacts`
+folder is never upgraded or copied, and a restored database keeps referencing it.
+`settings.json`, `secrets.json` and `toolchain/state.json` follow the same rule:
+a format newer than this Visto knows is refused.
+
+## Stores
+
 `LocalArtifactStore(root: Path)` and
 `SQLiteRunStore(database: Path, artifacts: ArtifactStore)` implement the async
 application ports. They perform blocking local I/O in bounded SQLite operations
@@ -17,8 +77,9 @@ IDs of evidence presented to the model, its working plan and reported token
 usage. Unknown usage stays unknown. AI assessments are recorded opinions, never
 ground-truth labels. Technical command completion is not an application pass.
 
-The adapter uses schema version 1 and a closed tagged JSON format with explicit
-allowlisted domain types. Unknown versions, tags, duplicate JSON keys and extra
+The adapter uses a versioned schema (see
+[data upgrades](#data-upgrades-and-backups)) and a closed tagged JSON format with
+explicit allowlisted domain types. Unknown versions, tags, duplicate JSON keys and extra
 fields are rejected. No pickle or runtime imports from stored values are used.
 SQL values use placeholders, including arbitrary run IDs. A connection is opened
 per operation with Python 3.12 `autocommit=True`, foreign keys and full synchronous
@@ -63,16 +124,18 @@ directory entry survives every power-loss scenario. This is local persistence,
 not an archival or encrypted evidence vault.
 
 Screenshots, goals, entered text, decisions and answers may contain private data.
-Keep the configured state directory outside source control and shared/public
-folders. Files inherit the directory's operating-system permissions; the tool
-does not encrypt them or install account ACLs. Credentials must be injected into
-provider adapters and are not part of these configuration snapshots. Input text
-and screenshots are deliberately preserved as evidence; this is not a general
-secret scrubber.
+Keep the Visto home (and any `--data-dir`) outside source control and
+shared/public folders. Apart from the owner-only modes described
+[above](#visto-home), run data files inherit the folder's operating-system
+permissions; the tool does not encrypt them or install account ACLs. Credentials
+must be injected into provider adapters and are not part of these configuration
+snapshots. Input text and screenshots are deliberately preserved as evidence; this
+is not a general secret scrubber.
 
 Retention is manual and indefinite by default. There is no background deletion,
 upload or public artifact URL. Stop all users of the state directory before
-backing up its database and artifact tree together. Restore both together; a
+backing up its database and artifact tree together (stop `visto start` and
+any `visto run` first). Restore both together; a
 database-only restore can reference absent screenshots. Remove a complete chosen
 state directory only after keeping any required evidence and confirming it is
 the intended directory. Provider adapters transmit selected screenshots and

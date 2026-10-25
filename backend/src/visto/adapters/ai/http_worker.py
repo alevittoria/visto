@@ -2,6 +2,7 @@
 
 import base64
 import json
+import re
 import secrets
 import socket
 import ssl
@@ -15,12 +16,14 @@ from .transport import (
     MAX_INPUT_BYTES,
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
+    PROBE_MODEL_PATTERN,
     TRANSCRIPTION_MODEL,
     safe_error,
 )
 
 RESPONSES_URL = "https://api.openai.com/v1/responses"
 TRANSCRIPTIONS_URL = "https://api.openai.com/v1/audio/transcriptions"
+MODELS_URL = "https://api.openai.com/v1/models/"
 
 
 class RejectRedirects(HTTPRedirectHandler):
@@ -75,43 +78,59 @@ def handle_packet(raw: bytes) -> dict:
         if len(raw) > MAX_INPUT_BYTES:
             raise ValueError("Input limit")
         packet = json.loads(raw)
-        base = {"api_key", "payload", "timeout_ms"}
-        if type(packet) is not dict or set(packet) not in (base, base | {"media_type"}):
+        probe = type(packet) is dict and "probe_model" in packet
+        shapes = (
+            ({"api_key", "probe_model", "timeout_ms"},)
+            if probe
+            else (
+                {"api_key", "payload", "timeout_ms"},
+                {"api_key", "payload", "timeout_ms", "media_type"},
+            )
+        )
+        if type(packet) is not dict or set(packet) not in shapes:
             raise ValueError("Invalid packet")
-        key, encoded, timeout = packet["api_key"], packet["payload"], packet["timeout_ms"]
+        key, timeout = packet["api_key"], packet["timeout_ms"]
         if (
             type(key) is not str
             or not key.strip()
             or len(key) > 8192
-            or type(encoded) is not str
             or type(timeout) is not int
             or timeout < 1
         ):
             raise ValueError("Invalid fields")
-        payload = base64.b64decode(encoded, validate=True)
-        if not payload or len(payload) > MAX_REQUEST_BYTES:
-            raise ValueError("Invalid payload")
-        if "media_type" in packet:
-            # Speech transcription: the payload is audio; the form is fixed here.
-            media_type = packet["media_type"]
-            if media_type not in AUDIO_EXTENSIONS or len(payload) > MAX_AUDIO_BYTES:
-                raise ValueError("Invalid audio")
-            url = TRANSCRIPTIONS_URL
-            payload, content_type = transcription_body(payload, media_type)
+        payload, method = None, "POST"
+        if probe:
+            # Key check: fixed GET, the model id is validated before any request.
+            model = packet["probe_model"]
+            if type(model) is not str or re.fullmatch(PROBE_MODEL_PATTERN, model) is None:
+                raise ValueError("Invalid model")
+            url, content_type, method = MODELS_URL + model, None, "GET"
         else:
-            # Validate before any request; endpoint/headers are never provided by AI.
-            if type(json.loads(payload)) is not dict:
-                raise ValueError("Invalid request JSON")
-            url, content_type = RESPONSES_URL, "application/json"
+            encoded = packet["payload"]
+            if type(encoded) is not str:
+                raise ValueError("Invalid fields")
+            payload = base64.b64decode(encoded, validate=True)
+            if not payload or len(payload) > MAX_REQUEST_BYTES:
+                raise ValueError("Invalid payload")
+            if "media_type" in packet:
+                # Speech transcription: the payload is audio; the form is fixed here.
+                media_type = packet["media_type"]
+                if media_type not in AUDIO_EXTENSIONS or len(payload) > MAX_AUDIO_BYTES:
+                    raise ValueError("Invalid audio")
+                url = TRANSCRIPTIONS_URL
+                payload, content_type = transcription_body(payload, media_type)
+            else:
+                # Validate before any request; endpoint/headers are never provided by AI.
+                if type(json.loads(payload)) is not dict:
+                    raise ValueError("Invalid request JSON")
+                url, content_type = RESPONSES_URL, "application/json"
     except (OSError, ValueError, TypeError):
         return {"error": "provider: invalid_request"}
     try:
-        request = Request(
-            url,
-            data=payload,
-            headers={"Authorization": f"Bearer {key}", "Content-Type": content_type},
-            method="POST",
-        )
+        headers = {"Authorization": f"Bearer {key}"}
+        if content_type is not None:
+            headers["Content-Type"] = content_type
+        request = Request(url, data=payload, headers=headers, method=method)
         # urllib's normal TLS and proxy handling is retained. The parent owns the
         # total deadline and forcibly terminates this process if it expires.
         with urlopen(request, timeout=timeout / 1000) as response:

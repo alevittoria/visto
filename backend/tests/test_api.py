@@ -1,8 +1,11 @@
 """Local HTTP boundaries exercise no device or provider network operations."""
 
 import asyncio
+import re
 import shutil
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -10,8 +13,11 @@ from fastapi.testclient import TestClient
 
 from visto.adapters.api.service import ExecutionService, WebSettings
 from visto.adapters.devices import AttachedDevice, InventoryUnavailable, Platform
+from visto.adapters.ios.signing import IOSSigning
+from visto.adapters.settings.store import Settings, SettingsStore
 from visto.composition import create_app
 from visto.domain.run import Cancelled
+from visto.home import VistoHome
 
 
 @pytest.fixture
@@ -56,10 +62,9 @@ BODY = {"device_id": "operator-selected-serial", "goal": "Preserve original goal
 
 
 def make_service(directory):
-    service = ExecutionService(
-        WebSettings(directory, directory / ".env", directory / "leases"),
-        key_resolver=lambda _: "dummy-key",
-    )
+    store = SettingsStore(VistoHome(directory / "home"))
+    store.set_api_key("dummy-key")
+    service = ExecutionService(WebSettings(directory, store, directory / "leases"))
     service.runtime_factory = lambda settings, key, control: FakeLoop(service, control)
     return service
 
@@ -288,7 +293,12 @@ def test_real_loop_question_events_provenance_idempotent_answer_and_fresh_resume
         assert "storage_key" not in screenshot
         assert screenshot["url"].endswith("/artifacts/" + event["data"]["observation_id"])
         assert client.get(screenshot["url"]).content == b"local-image-1"
-        assert client.get(screenshot["url"]).headers["cache-control"] == "no-store"
+        artifact_headers = client.get(screenshot["url"]).headers
+        assert artifact_headers["cache-control"] == "no-store"
+        # Other origins cannot embed screenshots or API responses (e.g. via <img>).
+        assert artifact_headers["cross-origin-resource-policy"] == "same-origin"
+        events_headers = client.get(f"/api/runs/{run_id}/events").headers
+        assert events_headers["cross-origin-resource-policy"] == "same-origin"
         assert "working_plan" in str(client.get(f"/api/runs/{run_id}/events?after=1").json())
         assert client.post(f"/api/runs/{run_id}/resume", headers=headers).status_code == 202
         terminal = eventually(client, run_id, "terminal")
@@ -328,7 +338,7 @@ def test_suspended_deadline_expires_without_operator_resume(directory):
 
 def test_missing_configuration_and_runtime_failures_are_sanitized(directory):
     service = make_service(directory)
-    service.key_resolver = lambda _: ""
+    service.settings.settings_store.delete_api_key()
     with TestClient(create_app(service), base_url="http://localhost") as client:
         assert not client.get("/api/readiness").json()["configured"]
         assert client.post("/api/runs", headers=HEADERS, json=BODY).status_code == 503
@@ -379,12 +389,15 @@ def test_default_composition_paths_ignore_process_working_directory(directory, m
 
     monkeypatch.setattr(composition, "ExecutionService", capture)
     monkeypatch.chdir(directory)
-    composition.create_app()
+    home = VistoHome(directory / "fresh-home")
+    composition.create_app(home=home)
     settings = captured[0]
-    repository = Path(__file__).resolve().parents[2]
-    assert settings.env_file == repository / ".env"
-    assert settings.data_directory == repository / ".work" / "runs"
-    assert settings.lease_directory == repository / ".work" / "device-leases"
+    assert settings.settings_store.api_key() == ""
+    assert settings.data_directory == home.data
+    assert settings.lease_directory == home.leases
+    assert settings.appium_url == "http://127.0.0.1:4723"
+    composition.create_app(home=home, appium_url="http://127.0.0.1:4801")
+    assert captured[1].appium_url == "http://127.0.0.1:4801"
 
 
 def test_proxied_console_origin_is_accepted_and_rewritten_host_is_rejected(directory):
@@ -711,6 +724,7 @@ def test_run_creation_defaults_to_android_and_accepts_ios(directory):
         return FakeLoop(service, control)
 
     service.runtime_factory = factory
+    service.ios_device_lister = _ios_listing
     with TestClient(create_app(service), base_url="http://localhost") as client:
         android = client.post("/api/runs", headers=HEADERS, json=BODY)
         assert android.status_code == 202
@@ -731,6 +745,46 @@ def test_run_creation_defaults_to_android_and_accepts_ios(directory):
     assert android.json()["configuration"]["device_adapter_version"] == "appium-wire-v1"
 
 
+def test_ios_run_is_rejected_where_ios_is_not_offered(directory):
+    service = make_service(directory)
+    service.device_lister = _android_listing
+    created = []
+    service.runtime_factory = lambda *args: created.append(args)
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        response = client.post("/api/runs", headers=HEADERS, json={**BODY, "platform": "ios"})
+    assert response.status_code == 422 and created == []
+    assert response.json()["detail"] == "Unsupported platform"
+
+
+def test_off_mac_composition_has_no_ios_sources_or_wording(directory, monkeypatch):
+    import visto.composition as composition
+
+    async def no_devices(adb):
+        return ()
+
+    monkeypatch.setattr(composition, "find_adb", lambda: None)
+    monkeypatch.setattr(composition, "list_devices", no_devices)
+    monkeypatch.setattr(composition, "find_xcrun", lambda: None)
+    monkeypatch.setattr(composition, "fetch_prices", lambda: (_ for _ in ()).throw(OSError()))
+    app = composition.create_app(home=VistoHome(directory / "home"), ios=False)
+    with TestClient(app, base_url="http://localhost") as client:
+        readiness = client.get("/api/readiness")
+        devices = client.get("/api/devices")
+    assert readiness.json()["platforms"] == ["android"]
+    assert devices.json()["available"] is True
+    for response in (readiness, devices):
+        assert not re.search(r"ios|xcode|xcrun|simulator", response.text, re.I)
+    assert app.state.settings_host.ios_supported is False
+
+    created = []
+    monkeypatch.setattr(
+        composition, "ExecutionService", lambda s: created.append(SimpleNamespace()) or created[-1]
+    )
+    composition.create_app(home=VistoHome(directory / "home"), ios=True)
+    assert created[0].ios_device_lister is not None
+    assert created[0].ios_physical_device_lister is not None
+
+
 def test_unknown_platform_is_rejected_with_422(directory):
     with TestClient(create_app(make_service(directory)), base_url="http://localhost") as client:
         response = client.post("/api/runs", headers=HEADERS, json={**BODY, "platform": "symbian"})
@@ -745,3 +799,159 @@ def test_readiness_lists_the_platforms_that_have_a_configured_lister(directory):
     service.ios_physical_device_lister = _ios_listing
     with TestClient(create_app(service), base_url="http://localhost") as client:
         assert client.get("/api/readiness").json()["platforms"] == ["android", "ios"]
+
+
+def test_environment_key_is_ignored(directory, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env")
+    service = make_service(directory)
+    service.settings.settings_store.delete_api_key()
+    assert service.readiness()["provider_key_configured"] is False
+
+
+def test_key_change_applies_without_restart(directory):
+    service = make_service(directory)
+    service.settings.settings_store.delete_api_key()
+    assert service.readiness()["provider_key_configured"] is False
+    service.settings.settings_store.set_api_key("sk-test-live")
+    assert service.readiness()["provider_key_configured"] is True
+
+
+def test_invalid_local_settings_are_reported_without_detail(directory):
+    service = make_service(directory)
+    home = VistoHome(directory / "home")
+    home.secrets_file.write_text("not json", encoding="utf-8")
+    readiness = service.readiness()
+    assert readiness["configured"] is False
+    assert readiness["configuration_error"] == (
+        "Local settings are invalid; open Settings or check the Visto home"
+    )
+
+
+def test_run_snapshots_signing_at_create(directory):
+    service = make_service(directory)
+    store = service.settings.settings_store
+    store.save(Settings(ios=IOSSigning(team_id="FIRST")))
+    captured = []
+    service.runtime_factory = lambda settings, key, control: (
+        captured.append(settings) or FakeLoop(service, control)
+    )
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        assert client.post("/api/runs", headers=HEADERS, json=BODY).status_code in (200, 201, 202)
+        store.save(Settings(ios=IOSSigning(team_id="SECOND")))
+    assert [settings.ios_signing.team_id for settings in captured] == ["FIRST"]
+
+
+def client_with_console(tmp_path, monkeypatch, *, index):
+    import visto.composition as composition
+
+    console = tmp_path / "console"
+    (console / "assets").mkdir(parents=True)
+    (console / "index.html").write_text(index, encoding="utf-8")
+    (console / "assets" / "app.js").write_text("console.log(1)", encoding="utf-8")
+    (tmp_path / "secret.txt").write_text("private", encoding="utf-8")
+    monkeypatch.setattr(composition, "console_directory", lambda: console)
+    service = make_service(tmp_path / "data")
+    return TestClient(create_app(service), base_url="http://localhost")
+
+
+def test_console_served_with_spa_fallback(directory, monkeypatch):
+    with client_with_console(directory, monkeypatch, index="<div id=root>") as client:
+        assert client.get("/").text == "<div id=root>"
+        assert client.get("/settings").text == "<div id=root>"
+        assert client.get("/assets/app.js").text == "console.log(1)"
+        assert client.get("/%2e%2e/secret.txt").text == "<div id=root>"
+        missing = client.get("/api/nope")
+        assert missing.status_code == 404 and missing.json() == {"detail": "Not Found"}
+        assert client.get("/api/health").status_code == 200
+        assert client.get("/", headers={"Host": "attacker.example"}).status_code == 403
+
+
+def test_without_a_built_console_root_is_not_served(directory, monkeypatch):
+    import visto.composition as composition
+
+    monkeypatch.setattr(composition, "console_directory", lambda: None)
+    with TestClient(create_app(make_service(directory)), base_url="http://localhost") as client:
+        assert client.get("/").status_code == 404
+        assert client.get("/api/health").status_code == 200
+
+
+def test_composition_uses_the_managed_adb_and_settings_host(directory, monkeypatch):
+    import visto.composition as composition
+    from visto.toolchain import Toolchain
+
+    home = VistoHome(directory / "managed")
+    toolchain = Toolchain(home)
+    for name in ("node", "jdk", "android-sdk", "appium"):
+        toolchain.component_dir(name, "1").mkdir(parents=True)
+    state = toolchain.state()
+    state.active.update({"node": "1", "jdk": "1", "android-sdk": "1", "appium": "1"})
+    toolchain.save_state(state)
+    adb = toolchain.paths().adb
+    adb.parent.mkdir(parents=True)
+    adb.write_bytes(b"")
+    driver = toolchain.paths().appium_dir / "node_modules" / "appium-xcuitest-driver"
+    driver.mkdir(parents=True)
+    (driver / "package.json").write_text('{"version": "9.9.9"}', encoding="utf-8")
+    created = []
+
+    def capture(settings):
+        created.append(SimpleNamespace(settings=settings))
+        return created[-1]
+
+    monkeypatch.setattr(composition, "ExecutionService", capture)
+    monkeypatch.setattr(composition, "find_adb", lambda: None)
+    monkeypatch.setattr(composition, "list_devices", lambda path: path)
+    app = composition.create_app(home=home)
+    assert created[0].device_lister() == adb
+    host = app.state.settings_host
+    assert host.xcuitest_version() == "9.9.9" and host.wda_project() is None
+    assert host.ios_supported is (sys.platform == "darwin")
+
+
+def test_composition_without_toolchain_falls_back_to_found_adb(directory, monkeypatch):
+    import visto.composition as composition
+
+    created = []
+    monkeypatch.setattr(
+        composition, "ExecutionService", lambda s: created.append(SimpleNamespace()) or created[-1]
+    )
+    found = directory / "adb"
+    monkeypatch.setattr(composition, "find_adb", lambda: found)
+    monkeypatch.setattr(composition, "list_devices", lambda path: path)
+    app = composition.create_app(home=VistoHome(directory / "bare"))
+    assert created[0].device_lister() == found
+    host = app.state.settings_host
+    assert host.wda_project() is None and host.xcuitest_version() is None
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/%5c%5cattacker%5cshare%5cx",
+        "/C:/Windows/win.ini",
+        "//attacker/share/x",
+        "/assets/..%2f..%2fsecret.txt",
+        "/assets/%00app.js",
+        "/.hidden",
+    ],
+)
+def test_console_never_touches_paths_outside_its_root(directory, monkeypatch, path):
+    import pathlib
+
+    touched = []
+    for name in ("resolve", "is_file", "stat", "exists"):
+        original = getattr(pathlib.Path, name)
+
+        def recording(self, *args, _original=original, **kwargs):
+            touched.append(str(self))
+            return _original(self, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, name, recording)
+    with client_with_console(directory, monkeypatch, index="<div id=root>") as client:
+        touched.clear()
+        response = client.get(path)
+    assert response.status_code in (200, 404)
+    assert response.status_code == 404 or response.text == "<div id=root>"
+    console = str(directory / "console")
+    outside = [p for p in touched if not p.startswith(console)]
+    assert not [p for p in outside if "attacker" in p or "win.ini" in p or "secret" in p]

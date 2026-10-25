@@ -11,6 +11,9 @@ dependencies = [
   "uvicorn==0.54.0",
 ]
 
+[project.scripts]
+visto = "visto.cli:entry"
+
 [dependency-groups]
 dev = [
   "httpx2==2.13.1",
@@ -26,6 +29,12 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-config --strict-markers"
+
+[tool.hatch.build.targets.wheel]
+# Build outputs copied in by scripts/build_release.py; ignored by git, so listed as
+# artifacts. Optional: a checkout without them still builds. components.json and
+# android-sdk-license.txt are tracked package files and are included as such.
+artifacts = ["src/visto/console/**", "src/visto/toolchain/appium/**"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "prompts/agent-core.md" = "visto/prompts/agent-core.md"

@@ -13,8 +13,10 @@ from fastapi.testclient import TestClient
 from visto.adapters.ai import http_worker, transcription
 from visto.adapters.ai.transport import MAX_AUDIO_BYTES, request_transcription
 from visto.adapters.api.service import ExecutionService, WebSettings
+from visto.adapters.settings.store import SettingsStore
 from visto.application.ports import PortError
 from visto.composition import create_app
+from visto.home import VistoHome
 
 HEADERS = {"X-Visto": "local-console", "Content-Type": "audio/webm;codecs=opus"}
 
@@ -28,9 +30,11 @@ def directory():
 
 
 def client_for(directory, transcriber, key="dummy-key"):
+    store = SettingsStore(VistoHome(directory / "home"))
+    if key:
+        store.set_api_key(key)
     service = ExecutionService(
-        WebSettings(directory, directory / ".env", directory / "leases"),
-        key_resolver=lambda _: key,
+        WebSettings(directory, store, directory / "leases"),
         transcriber=transcriber,
     )
     return TestClient(create_app(service), base_url="http://localhost")
@@ -98,10 +102,9 @@ def test_provider_failure_surfaces_only_sanitized_category(directory):
 
 
 def test_concurrent_transcription_is_rejected(directory):
-    service = ExecutionService(
-        WebSettings(directory, directory / ".env", directory / "leases"),
-        key_resolver=lambda _: "dummy-key",
-    )
+    store = SettingsStore(VistoHome(directory / "home"))
+    store.set_api_key("dummy-key")
+    service = ExecutionService(WebSettings(directory, store, directory / "leases"))
     release = asyncio.Event()
 
     async def slow(*_):

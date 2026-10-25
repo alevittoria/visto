@@ -225,3 +225,8 @@ details summary { cursor: pointer; font-size: 14px; color: var(--active); }
 .prices summary { cursor: pointer; font-weight: 650; }
 .topbar-actions { display: flex; align-items: center; gap: 14px; }
 .topbar-actions button { margin: 0; }
+
+.settings-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.check-row { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 14px; }
+.field-label { display: block; font-weight: 650; font-size: 14px; margin-bottom: 6px; }
+.path-text { font-family: ui-monospace, Consolas, monospace; font-size: 13px; overflow-wrap: anywhere; margin: 0; color: var(--muted); }

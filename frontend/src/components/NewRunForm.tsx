@@ -60,7 +60,8 @@ export function NewRunForm({ form, onChange, readiness, connected, submitting, u
         <label htmlFor="device">Device</label>
         <DeviceSelect value={form.deviceId} onSelect={(serial, devices) => onChange((current) => pickDevice(current, serial, devices))}
           onLoaded={(devices) => onChange((current) => pickDevice(current, reconcileDevice(current.deviceId, devices), devices))}
-          invalid={!!errors.deviceId} describedBy={describe('device', !!errors.deviceId, 'device-status')} />
+          invalid={!!errors.deviceId} describedBy={describe('device', !!errors.deviceId, 'device-status')}
+          platforms={readiness?.platforms ?? []} />
         {errors.deviceId && <p id="device-error" className="error-text">{errors.deviceId}</p>}
       </div>
 

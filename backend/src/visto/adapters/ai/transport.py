@@ -23,6 +23,8 @@ AUDIO_EXTENSIONS = {
     "audio/mpeg": "mp3",
     "audio/wav": "wav",
 }
+# Key check: GET /v1/models/{model} (docs/references.md); no billable inference.
+PROBE_MODEL_PATTERN = r"[A-Za-z0-9._-]{1,128}"
 SAFE_ERRORS = frozenset(
     "provider: " + code
     for code in (
@@ -95,28 +97,50 @@ async def request_transcription(
     return await _exchange(api_key, audio, timeout_ms, {"media_type": media_type}, _spawn)
 
 
+async def probe_model(
+    api_key: str, model: str, timeout_ms: int, *, _spawn=subprocess.Popen
+) -> dict:
+    """Retrieve one model's metadata through the fixed worker to check the key."""
+    if type(model) is not str or re.fullmatch(PROBE_MODEL_PATTERN, model) is None:
+        raise PortError("provider: invalid_request")
+    return await _exchange(api_key, None, timeout_ms, {"probe_model": model}, _spawn)
+
+
+async def verify_key(api_key: str, model: str, timeout_ms: int, *, probe=probe_model) -> str:
+    """Map a key probe to one word: ok, missing, unauthorized, model_unavailable, unreachable."""
+    if not api_key.strip():
+        return "missing"
+    try:
+        await probe(api_key, model, timeout_ms)
+    except PortError as error:
+        code = str(error)
+        if code in ("provider: http_401", "provider: http_403"):
+            return "unauthorized"
+        if code == "provider: http_404":
+            return "model_unavailable"
+        return "unreachable"
+    return "ok"
+
+
 async def _exchange(api_key, payload, timeout_ms, extra: dict, _spawn) -> dict:
+    # payload is None only for the body-less probe request.
     if (
         type(api_key) is not str
         or not api_key.strip()
         or len(api_key) > 8192
-        or type(payload) is not bytes
-        or not payload
-        or len(payload) > MAX_REQUEST_BYTES
+        or (
+            payload is not None
+            and (type(payload) is not bytes or not payload or len(payload) > MAX_REQUEST_BYTES)
+        )
         or type(timeout_ms) is not int
         or timeout_ms < 1
     ):
         raise PortError("provider: invalid_request")
     deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
-    packet = json.dumps(
-        {
-            "api_key": api_key,
-            "payload": base64.b64encode(payload).decode("ascii"),
-            "timeout_ms": timeout_ms,
-            **extra,
-        },
-        separators=(",", ":"),
-    ).encode()
+    fields = {"api_key": api_key, "timeout_ms": timeout_ms, **extra}
+    if payload is not None:
+        fields["payload"] = base64.b64encode(payload).decode("ascii")
+    packet = json.dumps(fields, separators=(",", ":")).encode()
     process = None
     communication = None
     try:

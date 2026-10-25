@@ -15,8 +15,8 @@
 - Version runtime instructions, model identity and observation references. A new
   instruction version is a new file in `backend/prompts/`; recorded runs keep theirs.
 - Never store raw secrets in prompts, fixtures or documentation.
-- Run the headless CLI from the repository root so all processes share
-  `.work/device-leases`. Never auto-clear uncertain ownership or replay an
+- Use one Visto home per host so all processes share
+  `<home>/data/device-leases`. Never auto-clear uncertain ownership or replay an
   interrupted mutation.
 - Provider errors expose explicit safe codes; raw exception/refusal bodies and
   credentials never become terminal details. A UTF-8 `--request-file` keeps

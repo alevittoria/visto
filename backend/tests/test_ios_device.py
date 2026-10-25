@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 
 from visto.adapters.ios import XCUITestDevice
+from visto.adapters.ios.signing import IOSSigning
 from visto.application.ports import PortError
 from visto.domain.commands import Back, Enter, Home, LongPress, Swipe, Tap, TypeText
 from visto.domain.models import Action, ArtifactRef, Observation, ReceiptStatus
@@ -89,9 +90,11 @@ class FakeWire:
         return {"value": None}
 
 
-async def prepared(tmp_path, wire=None):
+async def prepared(tmp_path, wire=None, signing=None):
     wire = wire or FakeWire()
-    device = XCUITestDevice("http://127.0.0.1:4723", tmp_path, wire=wire)
+    device = XCUITestDevice(
+        "http://127.0.0.1:4723", tmp_path, signing=signing or IOSSigning(), wire=wire
+    )
     lease = await device.acquire("run", "device-A", 3000)
     image = await device.observe(lease, 3000)
     artifact = ArtifactRef(
@@ -158,16 +161,14 @@ def test_session_capabilities_target_xcuitest_and_do_not_launch_an_app(tmp_path)
     asyncio.run(scenario())
 
 
-def test_signing_capabilities_appear_only_when_configured(tmp_path, monkeypatch):
-    signing = {
-        "VISTO_IOS_TEAM_ID": "TEAM123456",
-        "VISTO_IOS_SIGNING_ID": "Apple Development",
-        "VISTO_IOS_WDA_BUNDLE_ID": "test.visto.WebDriverAgentRunner",
-        "VISTO_IOS_PREBUILT_WDA": "1",
-        "VISTO_IOS_WDA_DERIVED_DATA": "~/DerivedData/WebDriverAgent-test",
-    }
-    for name in signing:
-        monkeypatch.delenv(name, raising=False)
+def test_signing_capabilities_appear_only_when_configured(tmp_path):
+    signing = IOSSigning(
+        team_id="TEAM123456",
+        signing_id="Apple Development",
+        wda_bundle_id="test.visto.WebDriverAgentRunner",
+        prebuilt_wda=True,
+        wda_derived_data="~/DerivedData/WebDriverAgent-test",
+    )
 
     async def scenario():
         device, wire, lease, _ = await prepared(tmp_path)
@@ -184,13 +185,11 @@ def test_signing_capabilities_appear_only_when_configured(tmp_path, monkeypatch)
         )
         await device.release(lease)
 
-        for name, value in signing.items():
-            monkeypatch.setenv(name, value)
-        configured, other, second_lease, _ = await prepared(tmp_path)
+        configured, other, second_lease, _ = await prepared(tmp_path, signing=signing)
         caps = other.calls[0][2]["capabilities"]["alwaysMatch"]
-        assert caps["appium:xcodeOrgId"] == signing["VISTO_IOS_TEAM_ID"]
-        assert caps["appium:xcodeSigningId"] == signing["VISTO_IOS_SIGNING_ID"]
-        assert caps["appium:updatedWDABundleId"] == signing["VISTO_IOS_WDA_BUNDLE_ID"]
+        assert caps["appium:xcodeOrgId"] == signing.team_id
+        assert caps["appium:xcodeSigningId"] == signing.signing_id
+        assert caps["appium:updatedWDABundleId"] == signing.wda_bundle_id
         # A run never rebuilds WebDriverAgent; installing it is an operator pre-step.
         assert caps["appium:usePrebuiltWDA"] is True
         # The prebuilt runner is looked up where the operator built it, not where the
@@ -201,6 +200,17 @@ def test_signing_capabilities_appear_only_when_configured(tmp_path, monkeypatch)
         await configured.release(second_lease)
 
     asyncio.run(scenario())
+
+
+def test_ios_capabilities_ignore_environment(monkeypatch):
+    monkeypatch.setenv("VISTO_IOS_TEAM_ID", "ENVTEAM")
+    monkeypatch.setenv("VISTO_IOS_PREBUILT_WDA", "1")
+    device = XCUITestDevice(
+        "http://127.0.0.1:4723", Path("leases"), signing=IOSSigning(team_id="T")
+    )
+    capabilities = device.capabilities("udid")
+    assert capabilities["appium:xcodeOrgId"] == "T"
+    assert "appium:usePrebuiltWDA" not in capabilities
 
 
 def test_tap_is_dispatched_in_points_not_pixels(tmp_path):

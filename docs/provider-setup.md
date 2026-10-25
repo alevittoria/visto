@@ -5,34 +5,41 @@ model; it, `gpt-5.6-terra` and `gpt-6-sol` all list image
 input and structured outputs in their official capability references. `--model` is explicit and configurable; account access and
 judgement quality are unverified until a live run. There is no provider fallback.
 
-Store `OPENAI_API_KEY` in the repository-root `.env` file, for example:
+## The provider key
 
-```dotenv
-OPENAI_API_KEY=your_api_key_here
-```
+An OpenAI API account and key with model access and billing are required; a
+ChatGPT session is not an API credential. Enter the key on the console's
+**Settings** page (opened automatically while no key is configured) or with
+`visto settings set-key`, which reads one line from standard input (a hidden prompt
+on a terminal) and never takes the key as an argument. Visto reads the key from its
+settings store only: no environment variable or other file is consulted, and
+the frontend never receives it.
 
-The local `.env` is ignored; `.env.example` contains no credential. The CLI reads
-it on each `run`/`doctor` invocation. A nonblank existing process OPENAI_API_KEY
-takes precedence. Use `--env-file PATH` in the CLI or `-EnvFile PATH` in the
-PowerShell wrapper for another explicitly selected file. The loader reads only
-OPENAI_API_KEY; it does not evaluate shell commands, expand variables or mutate
-the process environment. Supported syntax: UTF-8/BOM, optional `export`, blank
-lines/comments, plain/single-quoted/double-quoted values and trailing comments.
-Duplicate or malformed provider-key assignments fail with a sanitized error.
+The key is saved in plain text in `secrets.json` in the Visto home, written
+atomically; on macOS and Linux the file is readable by your user only (mode 0600),
+on Windows it inherits the access rules of your user profile folder. See
+[artifact storage](artifact-storage.md#visto-home). No API response, log line,
+error message, report or command output contains the key; the console and
+`visto settings show` show only whether one is configured and its last four
+characters. Replace or remove it from the Settings page, or with `visto settings
+set-key` and `visto settings delete-key`. A change applies to the next run without
+a restart; a running run keeps the key it started with.
 
-The wrapper prompts with masked input only if both the process key and env file
-are absent. A present empty file reports the missing key so it can be completed.
-The application does not load personal Codex credentials, inspect other projects
-or print the key. `inspect` does not read any credential file.
-An API account/key with model access and billing is required. A ChatGPT session
-is not automatically an API credential. Keep the local `.env` out of source control;
-do not put a real key into example/source files,
-goals, answers or screenshots.
+**Verify** on the Settings page, or `visto settings verify-key`, retrieves the
+default model's metadata (`GET https://api.openai.com/v1/models/<model>`) with the
+stored key. It runs no inference and is not billed. The result is one word: `ok`,
+`missing` (no key stored), `unauthorized` (the key was rejected),
+`model_unavailable` (the key cannot see the default model) or `unreachable`
+(network, proxy or TLS problem). Do not put a real key into goals, answers,
+screenshots, example files or source.
+
+## Requests
 
 The adapter uses the documented REST wire format directly, with standard-library
 HTTPS and no provider SDK dependency. A fixed hidden Python child performs one
-HTTPS request; the parent sends the key/request through stdin and removes
-OPENAI_API_KEY from the inherited child environment, preserving proxy/TLS settings.
+HTTPS request; the parent sends the key/request through stdin and removes any
+`OPENAI_API_KEY` variable from the inherited child environment, preserving
+proxy/TLS settings.
 HTTP redirects are rejected so credentials/images stay bound to the fixed endpoint.
 Deadline/cancellation kills and reaps that child and joins its local pipe task.
 OS process creation itself is not interruptible; startup time counts against the
@@ -84,7 +91,11 @@ A restricted agent session may have a disabled network path even when Appium
 and the Android device are accessible locally. Check the same CLI invocation
 from an ordinary host terminal to distinguish environments. Do not remove proxy
 variables, disable TLS, change the endpoint or add blind retries to work around
-an execution policy. The configuration-only `doctor` does not check connectivity.
+an execution policy. Behind a TLS-inspecting proxy, give Visto the proxy's
+certificate bundle as described in
+[installation](local-development.md#behind-a-tls-inspecting-proxy). `visto doctor`
+does not contact the provider; `visto settings verify-key` checks the key and the
+connection without inference.
 
 ## Data sent and stored
 

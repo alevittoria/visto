@@ -8,12 +8,13 @@ the [first device test](first-device-test.md)).
 
 ## Server versions and prerequisites
 
-Appium **3.8.0** and UiAutomator2 **8.7.0** are installed from
-`tools/appium/package.json` and its frozen pnpm lock (on macOS from
-`tools/appium/macos`, which adds the XCUITest driver). They use the local
-Android SDK and JDK; see [installation](local-development.md) for the
-prerequisites, the environment variables and starting Appium. The backend
-reaches Appium on loopback at `http://127.0.0.1:4723`.
+`visto setup` installs Appium **3.8.0** and UiAutomator2 **8.7.0** into the Visto
+home from the frozen pnpm lock shipped in the wheel (the lockfiles live in
+`tools/appium/`, and on macOS `tools/appium/macos/`, which adds the XCUITest
+driver), together with a JDK and the Android platform-tools and build-tools; see
+[installation](local-development.md). `visto start`, and `visto run` when no Appium
+is running yet, start Appium on loopback at `http://127.0.0.1:4723` with the SDK
+and JDK paths set in its own environment only. Android Studio is not needed.
 
 ## Connect a device
 
@@ -25,16 +26,20 @@ UiAutomator2 8 requires Android 8/Oreo (API 26) or newer.
    computer ("Always allow" keeps it authorized).
 3. Unlock the screen and manually open the application under test in its
    intended initial state.
-4. Check that the device is listed as `device`; `unauthorized` means the prompt
+4. Check that the device is listed as ready; `unauthorized` means the prompt
    was not accepted yet:
 
 ```sh
-adb devices -l
+visto doctor
 ```
 
-The backend starts the adb server when it starts (`adb start-server`), so the
+Visto uses its own `adb` from the managed platform-tools, which is not put on
+`PATH`. Doctor prints its path; the commands below write it as `<adb>`. The
+backend starts the adb server when it starts (`<adb> start-server`), so the
 console lists devices right away; the server keeps running when the backend
-stops. The runner never chooses the first attached device: pick the serial
+stops. Only one adb server runs per host: if another tool already started an adb
+of a different version, doctor warns, and Visto's `adb` would replace that server,
+so quit the other tool first. The runner never chooses the first attached device: pick the serial
 explicitly in the console or pass it to the CLI.
 
 ### Wireless debugging
@@ -44,13 +49,12 @@ as the computer. In Developer options open Wireless debugging, choose "Pair
 device with pairing code", then:
 
 ```sh
-adb pair <ip>:<pairing-port>       # enter the six-digit code
-adb connect <ip>:<port>            # the port shown on the Wireless debugging screen
+<adb> pair <ip>:<pairing-port>       # enter the six-digit code
+<adb> connect <ip>:<port>            # the port shown on the Wireless debugging screen
 ```
 
-The device then appears in `adb devices` as `<ip>:<port>`. Press Refresh in the
-console to list it. Reconnect with `adb connect` after the phone or the computer
-restarts.
+The device then appears as `<ip>:<port>`. Press Refresh in the console to list
+it. Reconnect with `<adb> connect` after the phone or the computer restarts.
 
 Do not enable relaxed security or the adb_shell insecure feature: this product
 exposes no shell command. Appium may install its on-device automation helpers
@@ -118,10 +122,10 @@ COMPLETED is a technical receipt and says nothing about application success.
 
 ## Exclusive ownership and crash recovery
 
-Use one shared lease directory for **all runner processes on this host**. The
-CLI composition root resolves `.work/device-leases` from the repository-root
-working directory, independently of the run's data directory. Start every CLI
-from that same repository root so its absolute lease directory is shared. An O_EXCL file
+All Visto processes that use the same home share one lease directory,
+`~/.visto/data/device-leases` (`<home>/data/device-leases` with `--home`),
+independently of a run's `--data-dir`. Use one home for every runner on this host,
+so the console and the CLI cannot drive the same device at once. An O_EXCL file
 named SHA256(serial).lease is created before session startup and contains a
 random ownership token, PID, run and device IDs. Only the same live adapter/token
 may delete it after confirmed session cleanup. There is no automatic stealing,
@@ -132,23 +136,28 @@ prevent competing manual automation clients.
 
 After a crash, unknown startup, uncertain mutation or cleanup failure:
 
-1. Stop the affected runner and its Appium server; verify its process has exited
-   and no automation command/session is still active. Reconcile the device's
+1. Stop the affected runner (Ctrl+C in `visto start`, or the `visto run`
+   process), which also stops the Appium it started; verify the process has
+   exited and no automation command/session is still active. Reconcile the device's
    actual state manually. Stop any other client using this device.
-2. Inspect the single marker's device_id/run_id/PID and the run's persisted intent
-   and receipt. Do not infer an application verdict from a lost transport.
+2. Inspect the single marker's device_id/run_id/PID (`visto doctor` lists every
+   retained marker with these) and the run's persisted intent and receipt. Do
+   not infer an application verdict from a lost transport.
 3. Only after the device is idle, delete that exact marker file,
-   `.work/device-leases/<hash>.lease`, where `<hash>` is the SHA-256 of the
-   serial (`printf %s '<serial>' | sha256sum`; `shasum -a 256` on macOS).
+   `~/.visto/data/device-leases/<hash>.lease`, where `<hash>` is the SHA-256 of the
+   serial (`printf %s '<serial>' | sha256sum`; `shasum -a 256` on macOS); doctor
+   prints the full path of each retained marker.
    Never clear all leases while another run might own a device.
-4. Restart Appium and create a new run from fresh observations. Automatic resume
+4. Start Visto again and create a new run from fresh observations. Automatic resume
    of an interrupted mutation is unsupported.
 
 Screenshot bytes/text may be private. The adapter keeps the latest capture in
 process memory; the artifact store persists evidence, and the AI adapter may send
 it to the configured provider. Appium itself can log request bodies, entered text,
-or device data even at reduced log levels. Treat its local logs as private, keep
-them outside source control, and review storage/provider handling before use.
+or device data even at reduced log levels. Its output goes to
+`~/.visto/logs/appium.log`, created readable by your user only on macOS and Linux.
+Treat it as private, keep it outside source control, and review storage/provider
+handling before use.
 
 ## Official sources
 

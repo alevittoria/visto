@@ -26,8 +26,10 @@ from visto.domain.run import (
     UserAnswer,
 )
 from visto.domain.validation import validate_action, validate_decision
+from visto.home import make_private_dir
 
 from .codec import dumps, loads
+from .migrations import SchemaTooNew, migrate
 
 
 class SQLiteRunStore:
@@ -35,28 +37,10 @@ class SQLiteRunStore:
         self.database = Path(database).resolve()
         self.artifacts = artifacts
         try:
-            self.database.parent.mkdir(parents=True, exist_ok=True)
-            with self._transaction() as connection:
-                version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if version not in (0, 1):
-                    raise ValueError("Unsupported schema")
-                connection.execute(
-                    "CREATE TABLE IF NOT EXISTS runs ("
-                    "run_id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
-                )
-                connection.execute(
-                    "CREATE TABLE IF NOT EXISTS records ("
-                    "position INTEGER PRIMARY KEY, run_id TEXT NOT NULL "
-                    "REFERENCES runs(run_id), kind TEXT NOT NULL, "
-                    "record_id TEXT NOT NULL, payload TEXT NOT NULL, "
-                    "UNIQUE(run_id, kind, record_id))"
-                )
-                connection.execute(
-                    "CREATE TABLE IF NOT EXISTS terminals ("
-                    "run_id TEXT PRIMARY KEY REFERENCES runs(run_id), "
-                    "payload TEXT NOT NULL)"
-                )
-                connection.execute("PRAGMA user_version=1")
+            make_private_dir(self.database.parent)
+            migrate(self.database)
+        except SchemaTooNew:
+            raise PortError("storage: database is newer than this Visto") from None
         except (OSError, sqlite3.Error, ValueError):
             raise PortError("storage: initialization failed") from None
 

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from visto.application.ports import PortError
 from visto.domain.models import ArtifactRef
+from visto.home import make_private_dir
 
 from .codec import dumps, loads
 
@@ -17,7 +18,7 @@ from .codec import dumps, loads
 class LocalArtifactStore:
     def __init__(self, root: Path) -> None:
         self.root = Path(root).resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
+        make_private_dir(self.root)
 
     async def put(self, run_id: str, content: bytes, media_type: str) -> ArtifactRef:
         if not isinstance(run_id, str) or not run_id.strip() or type(content) is not bytes:

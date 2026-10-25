@@ -16,12 +16,12 @@ from fastapi import HTTPException
 from visto.adapters.ai import AUDIO_EXTENSIONS, TRANSCRIPTION_MODEL, transcribe
 from visto.adapters.devices import AttachedDevice, InventoryUnavailable, Platform
 from visto.adapters.pricing import PriceSheet, SQLitePriceStore
+from visto.adapters.settings.store import SettingsError, SettingsStore
 from visto.adapters.storage import LocalArtifactStore, SQLiteRunStore
 from visto.adapters.storage.codec import loads
 from visto.application.loop import RunLoop
 from visto.application.ports import PortError
 from visto.application.runtime import MutableRunControl, SystemClock
-from visto.configuration import resolve_api_key
 from visto.domain.models import ArtifactRef, Goal, Observation, RunLimits
 from visto.domain.run import InfrastructureFailure, Run, RunState, UserAnswer
 from visto.runner import RunnerSettings, build_runtime, new_run
@@ -63,7 +63,7 @@ def public(value: object, *, observation_id: str | None = None) -> object:
 @dataclass(frozen=True)
 class WebSettings:
     data_directory: Path
-    env_file: Path
+    settings_store: SettingsStore
     lease_directory: Path
     appium_url: str = "http://127.0.0.1:4723"
     model: str = "gpt-6-luna"
@@ -88,7 +88,6 @@ class ExecutionService:
         settings: WebSettings,
         *,
         runtime_factory: Callable = build_runtime,
-        key_resolver: Callable = resolve_api_key,
         device_lister: Callable[[], Awaitable[tuple[AttachedDevice, ...]]] | None = None,
         ios_device_lister: Callable[[], Awaitable[tuple[AttachedDevice, ...]]] | None = None,
         ios_physical_device_lister: Callable[[], Awaitable[tuple[AttachedDevice, ...]]]
@@ -97,7 +96,6 @@ class ExecutionService:
     ):
         self.settings = settings
         self.runtime_factory = runtime_factory
-        self.key_resolver = key_resolver
         self.device_lister = device_lister
         self.ios_device_lister = ios_device_lister
         self.ios_physical_device_lister = ios_physical_device_lister
@@ -127,10 +125,19 @@ class ExecutionService:
         if self.price_fetcher is not None:
             self.price_task = asyncio.create_task(self._price_loop())
 
+    def price_refresh_enabled(self) -> bool:
+        """The stored switch, read on every use; unreadable settings keep the backend offline."""
+        try:
+            return self.settings.settings_store.load().price_refresh
+        except SettingsError:
+            return False
+
     async def refresh_prices(self) -> bool:
         """Stores one snapshot per UTC day; True when a new day's prices were saved."""
         now = self.clock.now()
-        if self.price_fetcher is None or await asyncio.to_thread(self.prices.has, now.date()):
+        if self.price_fetcher is None or not self.price_refresh_enabled():
+            return False
+        if await asyncio.to_thread(self.prices.has, now.date()):
             return False
         self.price_attempt_at = now.isoformat()
         try:
@@ -159,7 +166,10 @@ class ExecutionService:
         error = None
         key = ""
         try:
-            key = self.key_resolver(self.settings.env_file)
+            key = self.settings.settings_store.api_key()
+        except SettingsError:
+            error = "Local settings are invalid; open Settings or check the Visto home"
+        try:
             RunnerSettings(
                 "configuration-check",
                 self.settings.data_directory,
@@ -195,8 +205,8 @@ class ExecutionService:
         if not audio:
             raise HTTPException(422, "No audio was recorded")
         try:
-            key = self.key_resolver(self.settings.env_file)
-        except (ValueError, OSError):
+            key = self.settings.settings_store.api_key()
+        except SettingsError:
             key = ""
         if not key.strip():
             raise HTTPException(503, "Provider configuration is missing or invalid on the server")
@@ -350,13 +360,16 @@ class ExecutionService:
             model = self.settings.model if request.model is None else request.model
             if model not in self.settings.models:
                 raise HTTPException(422, "Unsupported AI model")
+            if request.platform is Platform.IOS and Platform.IOS.value not in self.platforms():
+                raise HTTPException(422, "Unsupported platform")
             readiness = self.readiness()
             if not readiness["configured"]:
                 raise HTTPException(
                     503, "Provider configuration is missing or invalid on the server"
                 )
             try:
-                key = self.key_resolver(self.settings.env_file)
+                stored = self.settings.settings_store
+                key = stored.api_key()
                 settings = RunnerSettings(
                     request.device_id,
                     self.settings.data_directory,
@@ -365,6 +378,7 @@ class ExecutionService:
                     limits=RunLimits(**request.limits.model_dump()),
                     lease_directory=self.settings.lease_directory,
                     platform=request.platform,
+                    ios_signing=stored.load().ios,
                     **({"capabilities": ()} if request.observe_only else {}),
                 )
                 control = MutableRunControl()
@@ -374,7 +388,7 @@ class ExecutionService:
                     Goal(request.goal, tuple(request.constraints), request.expected_result),
                     self.clock,
                 )
-            except (ValueError, OSError):
+            except (ValueError, OSError):  # SettingsError is a ValueError.
                 raise HTTPException(503, "Runtime configuration could not be initialized") from None
             await self.store.create(run)
             entry = _Execution(run.run_id, runtime, control, asyncio.Event())

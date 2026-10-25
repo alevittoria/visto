@@ -1,0 +1,76 @@
+# Builds the Visto wheel for a version tag and attaches it to a GitHub release.
+# Never pushes to a branch; the only write is the release for the pushed tag.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.11.32"
+          enable-cache: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.19.0"
+          package-manager-cache: false
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install backend dependencies
+        # verify.py runs uv offline against this cache directory.
+        run: |
+          uv sync --project backend --locked --all-groups --cache-dir .work/uv-cache
+          echo "$GITHUB_WORKSPACE/backend/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Check the tag matches the project version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(python -c 'import tomllib; print(tomllib.load(open("backend/pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG does not match project version v$version"
+            exit 1
+          fi
+          echo "WHEEL=backend/dist/visto-$version-py3-none-any.whl" >> "$GITHUB_ENV"
+
+      - name: Run local checks
+        run: python scripts/verify.py
+
+      - name: Build the release wheel
+        run: python scripts/build_release.py
+
+      - name: Check the wheel contents
+        run: python scripts/check_wheel.py "$WHEEL"
+
+      - name: Write the wheel checksum
+        run: |
+          cd "$(dirname "$WHEEL")"
+          sha256sum "$(basename "$WHEEL")" > "$(basename "$WHEEL").sha256"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" "$WHEEL" "$WHEEL.sha256" --generate-notes
