@@ -12,13 +12,15 @@ from test_android import FakeWire
 
 from visto.adapters.ai import OpenAIAgent
 from visto.adapters.android import AppiumDevice
+from visto.adapters.devices import Platform
+from visto.adapters.ios.device import XCUITestDevice
 from visto.adapters.storage import LocalArtifactStore, SQLiteRunStore
 from visto.application.loop import RunLoop
 from visto.application.ports import PortError
-from visto.application.runtime import SystemClock
+from visto.application.runtime import MutableRunControl, SystemClock
 from visto.cli import main
-from visto.domain.models import Action, AgentDecision, Observation, TechnicalReceipt
-from visto.runner import RunnerSettings, build_runtime
+from visto.domain.models import Action, AgentDecision, Goal, Observation, TechnicalReceipt
+from visto.runner import RunnerSettings, build_runtime, new_run
 
 
 @pytest.fixture
@@ -327,3 +329,80 @@ def test_doctor_reports_env_key_presence_without_revealing_it(root, monkeypatch)
     )
     assert json.loads(output[0])["api_key_present"] is True
     assert "test-key" not in "".join(output)
+
+
+def test_doctor_reports_ios_prerequisites_without_contacting_a_device(root, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("VISTO_IOS_TEAM_ID", "TEAM-SECRET-1")
+    monkeypatch.setenv("VISTO_IOS_SIGNING_ID", "Signing Identity Secret")
+    monkeypatch.setenv("VISTO_IOS_WDA_BUNDLE_ID", "example.bundle.secret")
+
+    monkeypatch.setattr("visto.cli.xcrun_tool", lambda xcrun, name: name in ("simctl", "devicectl"))
+    monkeypatch.setattr("visto.cli.find_xcrun", lambda: Path("/usr/bin/xcrun"))
+    output = []
+    arguments_ = ["doctor", "--platform", "ios", "--device", "device-B", "--data-dir", str(root)]
+    assert main(arguments_, output=output.append) == 0
+    result = json.loads(output[0])
+    assert result["platform"] == "ios"
+    assert result["xcrun_present"] is True
+    assert result["simulator_tooling_present"] is True
+    assert result["device_tooling_present"] is True
+    assert result["wda_signing_configured"] is True
+    assert result["device_contacted"] is False and result["provider_contacted"] is False
+    for secret in ("TEAM-SECRET-1", "Signing Identity Secret", "example.bundle.secret", "/usr/bin"):
+        assert secret not in output[0]
+
+    monkeypatch.delenv("VISTO_IOS_TEAM_ID")
+    monkeypatch.setattr("visto.cli.find_xcrun", lambda: None)
+    output.clear()
+    assert main(arguments_, output=output.append) == 2
+    result = json.loads(output[0])
+    assert result["xcrun_present"] is False and result["wda_signing_configured"] is False
+
+
+def test_doctor_exit_for_ios_needs_only_the_simulator_toolchain(root, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    for name in ("VISTO_IOS_TEAM_ID", "VISTO_IOS_SIGNING_ID", "VISTO_IOS_WDA_BUNDLE_ID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("visto.cli.find_xcrun", lambda: Path("/usr/bin/xcrun"))
+    monkeypatch.setattr("visto.cli.xcrun_tool", lambda xcrun, name: name == "simctl")
+    output = []
+    arguments_ = ["doctor", "--platform", "ios", "--device", "device-B", "--data-dir", str(root)]
+    assert main(arguments_, output=output.append) == 0
+    result = json.loads(output[0])
+    assert result["simulator_tooling_present"] is True
+    assert result["device_tooling_present"] is False
+    assert result["wda_signing_configured"] is False
+
+    monkeypatch.setattr("visto.cli.xcrun_tool", lambda xcrun, name: name == "devicectl")
+    output.clear()
+    assert main(arguments_, output=output.append) == 2
+
+
+def test_run_rejects_an_unknown_platform(root, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    def forbidden(*args):
+        pytest.fail("Factory must not be called")
+
+    with pytest.raises(SystemExit) as stopped:
+        main(arguments(root) + ["--platform", "symbian"], factory=forbidden, output=print)
+    assert stopped.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "platform,device_class,adapter,instructions",
+    [
+        (Platform.ANDROID, AppiumDevice, "appium-wire-v1", "android-agent-v3"),
+        (Platform.IOS, XCUITestDevice, "appium-xcuitest-v1", "ios-agent-v1"),
+    ],
+)
+def test_runtime_selects_the_adapter_and_versions_from_the_platform(
+    root, platform, device_class, adapter, instructions
+):
+    settings = RunnerSettings("device-B", root, platform=platform)
+    loop = build_runtime(settings, "test-key", MutableRunControl())
+    assert type(loop.device) is device_class
+    configuration = new_run(settings, Goal("Example goal"), SystemClock()).configuration
+    assert configuration.device_adapter_version == adapter == device_class.version
+    assert configuration.identity.instruction_version == instructions

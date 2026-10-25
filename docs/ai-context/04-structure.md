@@ -6,7 +6,7 @@ Code:
   cross-reference validation.
 - `backend/src/visto/application/`: context/ports, conversational loop,
   clock and cooperative runtime controls.
-- `backend/src/visto/adapters/`: `ai`, `android`, `storage`, `api`, `pricing`,
+- `backend/src/visto/adapters/`: `ai`, `appium` (shared session core), `android`, `ios`, `storage`, `api`, `pricing`,
   `reports` and the technical `command_codec.py`.
 - `backend/src/visto/{composition,configuration,runner,cli}.py`: ASGI factory,
   settings, headless composition and terminal use.
@@ -14,13 +14,11 @@ Code:
 - `backend/tests/`: backend tests, including the import-direction guard.
 - `frontend/`: React/TypeScript console, native Node tests and Vite build; see
   `frontend/README.md` for its source layout.
-- `tools/appium/`: pinned Appium/UiAutomator2 package and lock for the appium image.
-- `compose.yaml`, `compose.usb.yaml`, `docker/`: containerized stack (net, appium,
-  backend, web) and nginx proxy; `.devcontainer/`: VS Code dev container.
+- `tools/appium/`: pinned Appium/UiAutomator2 package and lock (Windows, Linux);
+  `tools/appium/macos/`: pinned Appium, UiAutomator2 and XCUITest package and lock
+  (macOS).
 - `scripts/verify.py`: fixed-command local test/lint/build orchestration.
 - `scripts/check_project.py`: companion-file integrity check.
-- `scripts/connect-device.ps1`: host helper that switches a USB phone to adb over
-  TCP for the appium container (Windows hosts).
 
 Docs:
 
@@ -29,7 +27,7 @@ Docs:
 - `docs/ai-context/`: this context pack and STATUS.
 - `docs/product/vision.md`: product intent.
 - `docs/evaluation/`: model-judgement evaluation protocol, scenarios, run template.
-- `docs/*.md`: operator guides (setup, Docker, console, API, reports, storage)
+- `docs/*.md`: operator guides (installation, device setup, console, API, reports, storage)
   and `references.md` (official technical references).
 
 Local runtime data lives under the ignored `.work/` directory.

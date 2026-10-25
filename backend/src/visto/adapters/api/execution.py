@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from visto.adapters.ai import MAX_AUDIO_BYTES
+from visto.adapters.devices import Platform
 from visto.adapters.pricing import ATTRIBUTION, SOURCE_NAME, SOURCE_URL
 from visto.adapters.reports import render_html, render_json
 from visto.domain.models import Observation
@@ -39,6 +40,7 @@ class CreateRequest(BaseModel):
     )
     model: NonBlank | None = Field(default=None, max_length=128)
     observe_only: bool = False
+    platform: Platform = Field(default=Platform.ANDROID, strict=False)
     limits: LimitsRequest = Field(default_factory=LimitsRequest)
 
 
@@ -71,13 +73,6 @@ async def readiness(request: Request) -> dict:
 @router.get("/devices")
 async def devices(request: Request) -> dict:
     return await service(request).devices()
-
-
-@router.post("/devices/refresh")
-async def refresh_devices(request: Request) -> dict:
-    """Operator refresh: connect host USB devices (when configured), then list."""
-    require_local_write(request)
-    return await service(request).devices(connect=True)
 
 
 @router.post("/transcriptions")

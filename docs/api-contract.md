@@ -20,25 +20,33 @@ with `detail` naming only invalid field locations, never submitted values.
 - `GET /health`: existing product/version/runtime_ready liveness response.
 - `GET /readiness`: `{configured, provider_key_configured, configuration_error,
   model, models, appium_url, device_selection:"manual", devices:[], active_run_id,
-  cleanup_attention_run_ids, execution_available, default_limits}`. Configuration-only: no device/provider
+  cleanup_attention_run_ids, execution_available, default_limits, platforms}`.
+  `platforms` lists the platforms (`"android"`, `"ios"`) whose device sources this
+  process has configured; it is derived from configuration, not from attached devices. Configuration-only: no device/provider
   network calls and no Appium session. Operator enters the exact authorized ADB
   serial (or picks one from `GET /devices`); physical connectivity is checked
   when a run starts. Readiness itself never runs adb. Credentials
   resolve server-side from process environment then repository-root `.env`.
   `model` is the default; `models` is the operator-selectable allowlist
   (`gpt-6-luna` default, `gpt-5.6-terra`, `gpt-6-sol`).
-- `GET /devices`: `{available, devices:[{serial,state,model,product,selectable}],
-  error}`. Runs one fixed, read-only `adb devices -l` (5 s timeout, one at a time;
-  adb is found via ANDROID_HOME, ANDROID_SDK_ROOT, the default Windows SDK or PATH).
-  `selectable` is true only for adb state `device`; unauthorized/offline entries
-  are listed but not selectable. Failures return `available:false` and a safe
+- `GET /devices`: `{available, devices:[{serial,platform,state,model,product,selectable}],
+  error, notes}`. `platform` is `"android"` or `"ios"`. Android entries come from one
+  fixed, read-only `adb devices -l` (5 s timeout, one at a time; adb is found via
+  ANDROID_HOME, ANDROID_SDK_ROOT, the default Windows SDK or PATH); iOS entries come
+  from Xcode's command-line tools. `selectable` is platform-specific: adb state
+  `device` for Android, `booted` or `connected` for iOS; other states (unauthorized,
+  offline, shutdown) are listed but not selectable. Failures return `available:false` and a safe
   `error` without process output. It may start the local adb server. The console
   calls it only on open and on explicit Refresh; a run still re-checks the device.
 - `POST /runs` (202): `{device_id, model:null, goal, expected_result:null,
-  constraints:[], observe_only:false, limits:{wall_time_ms:1200000,
+  constraints:[], observe_only:false, platform:"android", limits:{wall_time_ms:1200000,
   max_actions:60,max_inferences:90,max_command_timeout_ms:60000,
   max_observation_delay_ms:10000}}`. Optional fields use those defaults.
   `model` null means the default; a value outside `models` returns 422.
+  `platform` is `"android"` (default, so existing callers are unchanged) or `"ios"`;
+  any other value returns 422. Creation lists no devices: a device that does not match
+  the platform fails closed when the session starts. The stored run records the
+  platform only through its adapter and instruction version strings.
   Returns a Run. Exactly one retained execution session; a paused or waiting run
   reserves that slot until completion/cancellation. There is no waiting queue.
 

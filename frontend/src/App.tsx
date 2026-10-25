@@ -112,7 +112,7 @@ export function App() {
     setCreateError(null);
     try {
       const run = await apiRequest<Run>('/runs', { method: 'POST', body: request });
-      setForm((current) => ({ ...emptyForm(defaults.current), deviceId: current.deviceId, limits: current.limits }));
+      setForm((current) => ({ ...emptyForm(defaults.current), deviceId: current.deviceId, platform: current.platform, limits: current.limits }));
       select(run.run_id);
     } catch (error) {
       // A lost response may still have started a run: never resubmit automatically.

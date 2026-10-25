@@ -20,7 +20,7 @@ backend/src/visto/
   application/     # run loop, context assembly, runtime controls; ports
   adapters/
     ai/            # provider conversation, response schema, transcription
-    android/       # Appium session, device inventory, host adb bridge
+    android/       # Appium session, device inventory
     storage/       # SQLite metadata and local artifacts
     api/           # FastAPI execution, health and statistics routes
     pricing/       # daily model price snapshots for cost estimates

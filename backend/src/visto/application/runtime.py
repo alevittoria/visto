@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 from .ports import RunControl
 
-# Some VM/container wall clocks are stepped backwards by host time sync (observed up
-# to about a minute in a Windows Docker dev container). Evidence ordering and receipt
+# Some VM wall clocks are stepped backwards by host time sync (observed up to about
+# a minute). Evidence ordering and receipt
 # validation need a non-decreasing clock, so wall time is anchored once per process
 # and advanced by the monotonic clock.
 _WALL_ANCHOR = datetime.now(UTC)

@@ -258,7 +258,10 @@ export async function apiRequest<T>(path: string, options: ApiOptions = {}, fetc
 
 const LIMIT_KEYS: (keyof Limits)[] = ['wall_time_ms', 'max_actions', 'max_inferences', 'max_command_timeout_ms', 'max_observation_delay_ms'];
 
+export type Platform = 'android' | 'ios';
+
 export interface AttachedDevice {
+  platform: Platform;
   serial: string;
   state: string;
   model: string | null;
@@ -268,9 +271,13 @@ export interface AttachedDevice {
 
 export interface DeviceInventory { available: boolean; devices: AttachedDevice[]; error: string | null; notes: string[] }
 
+// Ready words per platform: adb's for Android, simulator/device words for iOS.
+const READY_STATES: Record<Platform, readonly string[]> = { android: ['device'], ios: ['booted', 'connected'] };
+const PLATFORM_NAMES: Record<Platform, string> = { android: 'Android', ios: 'iOS' };
+
 const SERIAL = /^[A-Za-z0-9._:-]{1,256}$/;
 
-/** Validates GET /devices and POST /devices/refresh; unsafe entries are dropped, never rendered. */
+/** Validates GET /devices; unsafe entries are dropped, never rendered. */
 export function parseDevices(value: unknown): DeviceInventory {
   if (typeof value !== 'object' || value === null) throw new Error('Invalid device list response.');
   const v = value as Record<string, unknown>;
@@ -278,27 +285,37 @@ export function parseDevices(value: unknown): DeviceInventory {
   const devices = raw.flatMap((item): AttachedDevice[] => {
     if (typeof item !== 'object' || item === null) return [];
     const d = item as Record<string, unknown>;
+    const platform = d.platform;
+    if (platform !== 'android' && platform !== 'ios') return [];
     if (typeof d.serial !== 'string' || !SERIAL.test(d.serial) || typeof d.state !== 'string') return [];
     return [{
-      serial: d.serial, state: d.state,
+      platform, serial: d.serial, state: d.state,
       model: typeof d.model === 'string' ? d.model : null,
       product: typeof d.product === 'string' ? d.product : null,
-      selectable: d.selectable === true && d.state === 'device',
+      selectable: d.selectable === true && READY_STATES[platform].includes(d.state),
     }];
   });
   const notes = Array.isArray(v.notes) ? v.notes.filter((note): note is string => typeof note === 'string').slice(0, 16) : [];
   return { available: v.available === true, devices, error: typeof v.error === 'string' ? v.error : null, notes };
 }
 
-const STATE_HINTS: Record<string, string> = {
-  unauthorized: 'not authorized: accept the USB debugging prompt on the phone',
-  offline: 'offline: reconnect the cable or restart adb',
-  'no permissions': 'no permissions for this USB device',
+const STATE_HINTS: Record<Platform, Record<string, string>> = {
+  android: {
+    unauthorized: 'not authorized: accept the USB debugging prompt on the phone',
+    offline: 'offline: reconnect the cable or restart adb',
+    'no permissions': 'no permissions for this USB device',
+  },
+  // A run never boots a simulator, so a shut-down one must be started first.
+  ios: {
+    shutdown: 'not booted: start the simulator from Xcode first',
+    unavailable: 'unavailable: not usable from this Mac, check it in Xcode',
+  },
 };
 
 export function deviceLabel(device: AttachedDevice): string {
-  const name = device.model ? `${device.model} (${device.serial})` : device.serial;
-  return device.selectable ? name : `${name} — ${STATE_HINTS[device.state] ?? device.state}`;
+  const id = device.model ? `${device.model} (${device.serial})` : device.serial;
+  const name = `${id} · ${PLATFORM_NAMES[device.platform]}`;
+  return device.selectable ? name : `${name} — ${STATE_HINTS[device.platform][device.state] ?? device.state}`;
 }
 
 /** Keep a still-selectable choice; otherwise preselect the only selectable device. */

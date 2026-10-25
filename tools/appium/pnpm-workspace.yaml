@@ -1,0 +1,4 @@
+# Appium's install script is not needed; drivers are discovered from a hoisted node_modules.
+allowBuilds:
+  appium: false
+nodeLinker: hoisted

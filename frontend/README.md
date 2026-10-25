@@ -61,7 +61,7 @@ while checking. Errors do not display response bodies or internal diagnostics.
 
 `pnpm run preview` serves the production build locally for inspection; it does
 not configure an API proxy. Serve the API under the same origin when validating
-a production deployment; the Docker stack does this through nginx.
+a production deployment.
 
 ## Sources
 

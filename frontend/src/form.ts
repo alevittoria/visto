@@ -1,5 +1,5 @@
 // New-run form state and conversion to the POST /api/runs request.
-import type { Limits, Run } from './console.ts';
+import type { AttachedDevice, Limits, Platform, Run } from './console.ts';
 
 export interface LimitField {
   key: keyof Limits;
@@ -23,6 +23,8 @@ export const TEXT_LIMITS = { device: 256, goal: 16000, expected: 8000, constrain
 
 export interface RunForm {
   deviceId: string;
+  /** Platform of `deviceId`, set together via pickDevice; null until a device list has confirmed the pairing. */
+  platform: Platform | null;
   model: string;
   goal: string;
   expectedResult: string;
@@ -33,6 +35,7 @@ export interface RunForm {
 
 export interface CreateRunRequest {
   device_id: string;
+  platform: Platform;
   model: string | null;
   goal: string;
   expected_result: string | null;
@@ -50,7 +53,7 @@ export function displayLimit(field: LimitField, value: number): string {
 export function emptyForm(defaults: Limits): RunForm {
   const limits = {} as Record<keyof Limits, string>;
   for (const field of LIMIT_FIELDS) limits[field.key] = displayLimit(field, defaults[field.key]);
-  return { deviceId: '', model: '', goal: '', expectedResult: '', constraints: [], observeOnly: false, limits };
+  return { deviceId: '', platform: null, model: '', goal: '', expectedResult: '', constraints: [], observeOnly: false, limits };
 }
 
 /**
@@ -67,6 +70,7 @@ export function formFromRun(run: Run, models: readonly string[], defaults: Limit
   const model = run.configuration?.identity?.model ?? '';
   return {
     deviceId: run.device_id ?? '',
+    platform: null, // Not stored on the run; pickDevice sets it once the device list confirms the device.
     model: models.includes(model) ? model : '',
     goal: run.goal?.text ?? '',
     expectedResult: run.goal?.expected_result ?? '',
@@ -74,6 +78,12 @@ export function formFromRun(run: Run, models: readonly string[], defaults: Limit
     observeOnly: Array.isArray(run.configuration?.capabilities) && run.configuration.capabilities.length === 0,
     limits,
   };
+}
+
+/** Sets the device and its platform together so a request can never pair them wrongly. */
+export function pickDevice(form: RunForm, serial: string, devices: readonly AttachedDevice[]): RunForm {
+  const device = devices.find((d) => d.serial === serial);
+  return { ...form, deviceId: serial, platform: device?.platform ?? null };
 }
 
 /** Replaces limit text with server defaults only for fields the operator has not edited. */
@@ -108,6 +118,7 @@ export function buildRunRequest(form: RunForm): { request: CreateRunRequest; err
   const deviceId = form.deviceId.trim();
   if (!deviceId) errors.deviceId = 'Select a connected, authorized device.';
   else if (chars(deviceId) > TEXT_LIMITS.device) errors.deviceId = `Use at most ${TEXT_LIMITS.device} characters.`;
+  else if (form.platform === null) errors.deviceId = 'Wait for the device list to load, then select the device again.';
   if (blank(form.goal)) errors.goal = 'Describe what the AI should test.';
   else if (chars(form.goal) > TEXT_LIMITS.goal) errors.goal = `Use at most ${TEXT_LIMITS.goal} characters.`;
   if (chars(form.expectedResult) > TEXT_LIMITS.expected) errors.expectedResult = `Use at most ${TEXT_LIMITS.expected} characters.`;
@@ -125,6 +136,7 @@ export function buildRunRequest(form: RunForm): { request: CreateRunRequest; err
     errors: null,
     request: {
       device_id: deviceId,
+      platform: form.platform!,
       // Blank means the server default model.
       model: blank(form.model) ? null : form.model.trim(),
       // Goal text is preserved verbatim; only an all-whitespace value is rejected.

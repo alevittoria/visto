@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DEFAULT_LIMITS } from '../src/console.ts';
-import { applyDefaultLimits, buildRunRequest, emptyForm, formFromRun, LIMIT_FIELDS } from '../src/form.ts';
+import { DEFAULT_LIMITS, reconcileDevice } from '../src/console.ts';
+import { applyDefaultLimits, buildRunRequest, emptyForm, formFromRun, LIMIT_FIELDS, pickDevice } from '../src/form.ts';
 
-const valid = () => ({ ...emptyForm(DEFAULT_LIMITS), deviceId: ' emulator-5554 ', goal: '  Open Sample Notes\nand check the list  ' });
+const valid = () => ({ ...emptyForm(DEFAULT_LIMITS), platform: 'android', deviceId: ' emulator-5554 ', goal: '  Open Sample Notes\nand check the list  ' });
 
 test('form defaults show time limits in seconds and produce contract default limits', () => {
   const form = emptyForm(DEFAULT_LIMITS);
@@ -17,7 +17,7 @@ test('request preserves goal text verbatim, trims serial, drops blank optional v
   const { request, errors } = buildRunRequest({ ...valid(), expectedResult: '   ', constraints: ['No payments', '  ', 'Synthetic data only'], observeOnly: true });
   assert.equal(errors, null);
   assert.deepEqual(request, {
-    device_id: 'emulator-5554', model: null, goal: '  Open Sample Notes\nand check the list  ', expected_result: null,
+    device_id: 'emulator-5554', platform: 'android', model: null, goal: '  Open Sample Notes\nand check the list  ', expected_result: null,
     constraints: ['No payments', 'Synthetic data only'], observe_only: true, limits: DEFAULT_LIMITS,
   });
 });
@@ -71,14 +71,17 @@ test('run again prefills goal, model, mode and limits from a stored run', () => 
     goal: { text: 'Open Sample Notes', expected_result: 'The demo note is listed', constraints: ['No payments'] },
     configuration: { limits, capabilities: [], identity: { provider: 'openai', model: 'gpt-6-sol', instruction_version: 'v' } },
   };
-  const form = formFromRun(run, ['gpt-6-luna', 'gpt-6-sol'], DEFAULT_LIMITS);
+  const rerun = formFromRun(run, ['gpt-6-luna', 'gpt-6-sol'], DEFAULT_LIMITS);
+  assert.equal(rerun.platform, null);
+  assert.ok(buildRunRequest(rerun).errors.deviceId, 'no request before the device list confirms the platform');
+  const form = pickDevice(rerun, 'emulator-5554', [{ platform: 'android', serial: 'emulator-5554', state: 'device', selectable: true }]);
   assert.equal(form.model, 'gpt-6-sol');
   assert.equal(form.observeOnly, true);
   assert.equal(form.limits.wall_time_ms, '90');
   const { request, errors } = buildRunRequest(form);
   assert.equal(errors, null);
   assert.deepEqual(request, {
-    device_id: 'emulator-5554', model: 'gpt-6-sol', goal: 'Open Sample Notes', expected_result: 'The demo note is listed',
+    device_id: 'emulator-5554', platform: 'android', model: 'gpt-6-sol', goal: 'Open Sample Notes', expected_result: 'The demo note is listed',
     constraints: ['No payments'], observe_only: true, limits,
   });
   form.constraints.push('changed');
@@ -94,4 +97,28 @@ test('run again drops a model no longer offered and keeps operating mode', () =>
   assert.equal(form.model, '');
   assert.equal(form.observeOnly, false);
   assert.equal(form.expectedResult, '');
+});
+
+test('the request carries the platform of the selected device', () => {
+  const { request } = buildRunRequest({ ...valid(), deviceId: 'SIM-UDID-01', platform: 'ios' });
+  assert.equal(request.platform, 'ios');
+  assert.equal(buildRunRequest(valid()).request.platform, 'android');
+});
+
+test('a form from emptyForm or formFromRun cannot be submitted before pickDevice runs', () => {
+  const blank = { ...emptyForm(DEFAULT_LIMITS), deviceId: 'IOS-UDID-01', goal: 'g' };
+  assert.equal(blank.platform, null);
+  assert.ok(buildRunRequest(blank).errors.deviceId);
+});
+
+test('picking a device sets its platform with it', () => {
+  const devices = [{ platform: 'android', serial: 'A1', state: 'device', selectable: true },
+    { platform: 'ios', serial: 'I1', state: 'booted', selectable: true }];
+  assert.deepEqual(pickDevice(valid(), 'I1', devices).platform, 'ios');
+  assert.equal(pickDevice({ ...valid(), platform: 'ios' }, 'A1', devices).platform, 'android');
+  // A refresh that drops the device clears the choice and must not leave a stale platform behind.
+  const cleared = pickDevice({ ...valid(), deviceId: 'I1', platform: 'ios' }, reconcileDevice('I1', []), []);
+  assert.equal(cleared.deviceId, '');
+  assert.equal(cleared.platform, null);
+  assert.equal(pickDevice(valid(), 'unlisted', devices).platform, null, 'no silent android default');
 });

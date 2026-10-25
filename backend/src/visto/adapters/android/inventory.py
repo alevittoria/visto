@@ -1,27 +1,25 @@
-"""Read-only ADB device inventory: one fixed command, bounded, no generic shell."""
+"""ADB device inventory: fixed, bounded commands only, no generic shell."""
 
 import asyncio
 import os
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
+
+from visto.adapters.devices import AttachedDevice, InventoryUnavailable, Platform
+
+__all__ = [
+    "AttachedDevice",
+    "InventoryUnavailable",
+    "find_adb",
+    "list_devices",
+    "parse_devices",
+    "start_server",
+]
 
 _SERIAL = re.compile(r"^[A-Za-z0-9._:\-]{1,256}$")
 _DETAIL = re.compile(r"^([a-z_]+):(\S{1,128})$")
-
-
-@dataclass(frozen=True, slots=True)
-class AttachedDevice:
-    serial: str
-    state: str  # adb state, e.g. device, unauthorized, offline
-    model: str | None = None
-    product: str | None = None
-
-
-class InventoryUnavailable(Exception):
-    """Safe message only; never includes process output or local paths."""
 
 
 def find_adb(environ: dict[str, str] | None = None) -> Path | None:
@@ -53,6 +51,7 @@ def parse_devices(output: str) -> tuple[AttachedDevice, ...]:
         details = dict(m.groups() for p in parts[2:] if (m := _DETAIL.match(p)))
         devices.append(
             AttachedDevice(
+                Platform.ANDROID,
                 serial,
                 state,
                 details.get("model", "").replace("_", " ") or None,
@@ -80,6 +79,30 @@ def _run(adb: Path, timeout_s: float) -> bytes:
     if result.returncode != 0:
         raise InventoryUnavailable("adb reported an error")
     return result.stdout[:65536]
+
+
+def _start(adb: Path, timeout_s: float) -> bool:
+    # No pipes: the daemon this spawns would inherit them and keep the call waiting.
+    try:
+        result = subprocess.run(
+            [str(adb), "start-server"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout_s,
+            check=False,
+            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return result.returncode == 0
+
+
+async def start_server(adb: Path | None, timeout_s: float = 15.0) -> bool:
+    """Start the adb server if it is not running; never raises."""
+    if adb is None:
+        return False
+    return await asyncio.to_thread(_start, adb, timeout_s)
 
 
 async def list_devices(adb: Path | None, timeout_s: float = 5.0) -> tuple[AttachedDevice, ...]:

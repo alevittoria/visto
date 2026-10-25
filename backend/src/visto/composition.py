@@ -1,5 +1,6 @@
 """Composition root: external adapters are wired here, never into inner layers."""
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from importlib.metadata import version
@@ -9,14 +10,16 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from visto.adapters.android.host_bridge import HostAdb, bridge_host_devices
-from visto.adapters.android.inventory import find_adb, list_devices
+from visto.adapters.android.inventory import find_adb, list_devices, start_server
 from visto.adapters.api.execution import LOOPBACK_HOSTS
 from visto.adapters.api.execution import router as execution_router
 from visto.adapters.api.health import router as health_router
 from visto.adapters.api.service import ExecutionService, WebSettings
+from visto.adapters.ios.inventory import find_xcrun, list_physical, list_simulators
 from visto.adapters.pricing import fetch_prices
 from visto.application.ports import PortError
+
+_LOG = logging.getLogger(__name__)
 
 # Repository-root defaults do not depend on the process working directory.
 REPOSITORY = Path(__file__).resolve().parents[3]
@@ -29,14 +32,21 @@ def default_settings() -> WebSettings:
 
 def create_app(service: ExecutionService | None = None) -> FastAPI:
     """Create the local HTTP application without contacting device or provider."""
+    prepare = None
     if service is None:
         execution = ExecutionService(default_settings())
         adb = find_adb()
+
+        async def prepare():
+            # Own the adb server from startup so the first device listing finds it ready.
+            if adb is not None and not await start_server(adb):
+                _LOG.warning("The adb server could not be started")
+
         execution.device_lister = lambda: list_devices(adb)
-        # Docker Desktop: the host adb server owns USB phones (docs/docker.md).
-        host = HostAdb.parse(os.environ.get("VISTO_HOST_ADB"))
-        if host is not None:
-            execution.device_connector = lambda: bridge_host_devices(adb, host)
+        xcrun = find_xcrun()
+        # Two independent iOS sources: one failing must not hide the other's devices.
+        execution.ios_device_lister = lambda: list_simulators(xcrun)
+        execution.ios_physical_device_lister = lambda: list_physical(xcrun)
         # Daily public price list for cost estimates; "off" keeps the backend offline.
         if os.environ.get("VISTO_PRICE_REFRESH", "on").strip().lower() != "off":
             execution.price_fetcher = fetch_prices
@@ -45,6 +55,8 @@ def create_app(service: ExecutionService | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        if prepare is not None:
+            await prepare()
         await execution.open()
         app.state.execution = execution
         try:

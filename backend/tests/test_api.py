@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from visto.adapters.api.service import ExecutionService, WebSettings
+from visto.adapters.devices import AttachedDevice, InventoryUnavailable, Platform
 from visto.composition import create_app
 from visto.domain.run import Cancelled
 
@@ -596,3 +597,151 @@ def test_statistics_aggregate_stored_outcomes_tokens_and_scenarios(directory):
             "input_per_m": 1.0,
             "output_per_m": 10.0,
         }
+
+
+async def _ios_listing():
+    return (AttachedDevice(Platform.IOS, "device-B", "booted", "Example Simulator 1"),)
+
+
+async def _android_listing():
+    return (AttachedDevice(Platform.ANDROID, "device-A", "device", "Example Phone 1"),)
+
+
+def test_devices_lists_the_ios_sources_concurrently(directory):
+    service = make_service(directory)
+    started: list[str] = []
+    both_started = asyncio.Event()
+
+    async def source(name):
+        started.append(name)
+        if len(started) == 2:
+            both_started.set()
+        # Sequential execution never reaches the second start, so this times out.
+        await asyncio.wait_for(both_started.wait(), timeout=2)
+        return (AttachedDevice(Platform.IOS, name, "booted", "Example Simulator 1"),)
+
+    async def simulators():
+        return await source("device-B")
+
+    async def physical():
+        return await source("device-C")
+
+    service.ios_device_lister = simulators
+    service.ios_physical_device_lister = physical
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        body = client.get("/api/devices").json()
+    assert body["available"] is True
+    assert [d["serial"] for d in body["devices"]] == ["device-B", "device-C"]
+
+
+def test_devices_merges_platforms_and_notes_a_missing_toolchain(directory):
+    service = make_service(directory)
+
+    async def android():
+        return (AttachedDevice(Platform.ANDROID, "device-A", "device", "Example Phone 1"),)
+
+    async def missing_xcode():
+        raise InventoryUnavailable("xcrun was not found; install Xcode")
+
+    service.device_lister = android
+    service.ios_device_lister = missing_xcode
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        body = client.get("/api/devices").json()
+    assert body["available"] is True and body["error"] is None
+    assert [(d["platform"], d["serial"]) for d in body["devices"]] == [("android", "device-A")]
+    assert any("Xcode" in note for note in body["notes"])
+
+    service = make_service(directory)
+    service.device_lister = android
+    service.ios_device_lister = _ios_listing
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        body = client.get("/api/devices").json()
+    assert [(d["platform"], d["selectable"]) for d in body["devices"]] == [
+        ("android", True),
+        ("ios", True),
+    ]
+    assert body["notes"] == []
+
+
+def test_devices_unavailable_only_when_both_platforms_fail(directory):
+    service = make_service(directory)
+
+    async def no_adb():
+        raise InventoryUnavailable("adb was not found")
+
+    async def no_xcode():
+        raise InventoryUnavailable("xcrun was not found")
+
+    service.device_lister = no_adb
+    service.ios_device_lister = no_xcode
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        body = client.get("/api/devices").json()
+    assert body["available"] is False and body["devices"] == []
+    assert "adb was not found" in body["error"] and "xcrun was not found" in body["error"]
+
+    # Only an iOS lister configured: still usable.
+    service = make_service(directory)
+    service.ios_device_lister = _ios_listing
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        assert client.get("/api/devices").json()["available"] is True
+
+
+def test_devices_keeps_simulators_when_the_physical_source_fails(directory):
+    service = make_service(directory)
+
+    async def failing_physical():
+        raise InventoryUnavailable("devicectl did not answer in time")
+
+    service.ios_device_lister = _ios_listing
+    service.ios_physical_device_lister = failing_physical
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        body = client.get("/api/devices").json()
+    assert body["available"] is True and [d["serial"] for d in body["devices"]] == ["device-B"]
+    assert body["notes"] == ["devicectl did not answer in time"]
+
+
+def test_run_creation_defaults_to_android_and_accepts_ios(directory):
+    from visto.adapters.ai import INSTRUCTION_VERSIONS
+
+    service = make_service(directory)
+    seen = []
+
+    def factory(settings, key, control):
+        seen.append(settings.platform)
+        return FakeLoop(service, control)
+
+    service.runtime_factory = factory
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        android = client.post("/api/runs", headers=HEADERS, json=BODY)
+        assert android.status_code == 202
+        run_id = android.json()["run_id"]
+        assert client.post(f"/api/runs/{run_id}/cancel", headers=HEADERS).status_code == 202
+        eventually(client, run_id, "terminal")
+        ios = client.post("/api/runs", headers=HEADERS, json={**BODY, "platform": "ios"})
+        assert ios.status_code == 202
+        configuration = ios.json()["configuration"]
+        assert configuration["device_adapter_version"] == "appium-xcuitest-v1"
+        assert (
+            configuration["identity"]["instruction_version"] == INSTRUCTION_VERSIONS[Platform.IOS]
+        )
+        assert configuration["identity"]["instruction_version"] == "ios-agent-v1"
+        cancelled = client.post("/api/runs/" + ios.json()["run_id"] + "/cancel", headers=HEADERS)
+        assert cancelled.status_code == 202
+    assert seen == [Platform.ANDROID, Platform.IOS]
+    assert android.json()["configuration"]["device_adapter_version"] == "appium-wire-v1"
+
+
+def test_unknown_platform_is_rejected_with_422(directory):
+    with TestClient(create_app(make_service(directory)), base_url="http://localhost") as client:
+        response = client.post("/api/runs", headers=HEADERS, json={**BODY, "platform": "symbian"})
+    assert response.status_code == 422
+
+
+def test_readiness_lists_the_platforms_that_have_a_configured_lister(directory):
+    service = make_service(directory)
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        assert client.get("/api/readiness").json()["platforms"] == []
+    service.device_lister = _android_listing
+    service.ios_physical_device_lister = _ios_listing
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        assert client.get("/api/readiness").json()["platforms"] == ["android", "ios"]

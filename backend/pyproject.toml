@@ -6,6 +6,7 @@ license = "MIT"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi==0.143.0",
+  "pillow==13.0.0",
   "pydantic==2.14.0",
   "uvicorn==0.54.0",
 ]
@@ -27,7 +28,9 @@ testpaths = ["tests"]
 addopts = "--strict-config --strict-markers"
 
 [tool.hatch.build.targets.wheel.force-include]
+"prompts/agent-core.md" = "visto/prompts/agent-core.md"
 "prompts/android-agent-v3.md" = "visto/prompts/android-agent-v3.md"
+"prompts/ios-agent-v1.md" = "visto/prompts/ios-agent-v1.md"
 
 [tool.ruff]
 target-version = "py312"

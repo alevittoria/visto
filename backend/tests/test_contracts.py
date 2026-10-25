@@ -58,3 +58,27 @@ def test_presented_image_requires_exact_persisted_content():
     assert PresentedImage(observation, data).content == data
     with pytest.raises(ValueError):
         PresentedImage(observation, b"different content")
+
+
+def test_a_run_stored_before_platforms_existed_still_decodes():
+    from datetime import UTC, datetime
+
+    from visto.adapters.api.service import public
+    from visto.adapters.storage.codec import dumps, loads
+    from visto.domain.models import Goal, ModelIdentity, RunConfiguration, RunLimits
+    from visto.domain.run import Run
+
+    configuration = RunConfiguration(
+        RunLimits(1200000, 60, 90, 60000, 10000),
+        (),
+        ModelIdentity("openai", "gpt-6-luna", "android-agent-v3"),
+        "appium-wire-v1",
+    )
+    stored = dumps(configuration)
+    assert "platform" not in stored
+    assert loads(stored) == configuration
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    run = loads(dumps(Run("run-1", "device-A", Goal("Example goal"), configuration, now, now)))
+    projected = public(run)
+    assert projected["configuration"]["device_adapter_version"] == "appium-wire-v1"
+    assert "platform" not in projected["configuration"]

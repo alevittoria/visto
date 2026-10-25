@@ -9,7 +9,7 @@ write code, commit messages and engineering docs in English.
 ## Product direction
 
 - Visto is a platform-neutral mobile testing tool, open source under MIT.
-  Android is the only implemented platform; iOS is planned. Keep
+  Android and iOS are implemented (iOS with local checks only). Keep
   domain/application platform-neutral.
 - One conversational multimodal AI observes screenshots, decides actions, judges
   previous effects, adapts its plan and owns semantic test conclusions.
