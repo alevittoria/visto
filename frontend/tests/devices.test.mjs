@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { deviceLabel, parseDevices, reconcileDevice } from '../src/console.ts';
+import { deviceLabel, emptyDeviceHint, parseDevices, parseReadiness, reconcileDevice } from '../src/console.ts';
 
 const ready = { platform: 'android', serial: 'SERIAL01', state: 'device', model: 'Example Phone 1', product: 'example_phone', selectable: true };
 const pending = { platform: 'android', serial: 'emulator-5554', state: 'unauthorized', model: null, product: null, selectable: false };
@@ -63,4 +63,20 @@ test('a shut-down simulator explains that it must be booted first', () => {
   const gone = parseDevices({ devices: [{ ...sim, state: 'unavailable', selectable: false }] }).devices[0];
   assert.match(deviceLabel(gone), /unavailable: /);
   assert.doesNotMatch(deviceLabel(gone), /— unavailable$/);
+});
+
+test('the empty-list hint names only the platforms the server offers', () => {
+  const android = emptyDeviceHint(['android']);
+  assert.match(android, /Android phone with USB debugging/);
+  assert.doesNotMatch(android, /ios|xcode|simulator/i);
+  assert.doesNotMatch(emptyDeviceHint([]), /ios|xcode|simulator/i);
+  assert.match(emptyDeviceHint(['android', 'ios']), /iOS simulator from Xcode/);
+});
+
+test('readiness platforms keep only known values', () => {
+  const ready = { configured: true, provider_key_configured: true, execution_available: true, configuration_error: null,
+    model: 'm', appium_url: null, active_run_id: null,
+    default_limits: { wall_time_ms: 1, max_actions: 1, max_inferences: 1, max_command_timeout_ms: 1, max_observation_delay_ms: 1 } };
+  assert.deepEqual(parseReadiness({ ...ready, platforms: ['android', 'symbian', 3] }).platforms, ['android']);
+  assert.deepEqual(parseReadiness(ready).platforms, []);
 });

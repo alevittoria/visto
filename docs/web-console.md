@@ -7,14 +7,32 @@ are separate outcomes. Local software checks do not establish model accuracy.
 
 ## Start
 
-Keep the configured API key in the ignored repository-root `.env`; the backend
-loads it server-side and a nonblank process key takes precedence. Never put the
-key in the frontend or a goal. See [provider setup](provider-setup.md).
+Run `visto start` as described in
+[installation](local-development.md#3-start-visto-visto-start); it opens the console
+at <http://127.0.0.1:8000/> (or the `--port` you chose). iOS simulators and iPhones
+appear only when Visto runs on macOS; see [iOS setup](ios-setup.md).
 
-Start Appium, the backend and the console as described in
-[installation](local-development.md#4-start), then open
-<http://127.0.0.1:5173>. iOS simulators and iPhones appear only when the backend
-runs on macOS; see [iOS setup](ios-setup.md).
+## Settings
+
+The **Settings** button in the top bar (or `#settings`) opens the Settings page.
+While no provider key is configured, the console opens it on its own. Changes apply
+to the next run without restarting Visto.
+
+- **AI provider key**: shows whether a key is configured and its last four
+  characters. Paste a key and press **Save key** to set or replace it, **Verify**
+  to check it without a billable request, **Remove** to delete it. The key is never
+  shown again after saving and never reaches the console. See
+  [provider setup](provider-setup.md).
+- **Refresh model prices daily**: on by default. Turned off, the backend stops
+  contacting the price source and cost estimates use the price lists already
+  stored (see below).
+- **iOS signing** (macOS only): the WebDriverAgent signing values, the prebuilt
+  WebDriverAgent switch, the derived data folder and the read-only
+  WebDriverAgent project path, with a notice when WebDriverAgent must be rebuilt.
+  See [iOS setup](ios-setup.md#signing-values-physical-phone).
+
+Save writes `settings.json` (and the key `secrets.json`) in the Visto home; see
+[artifact storage](artifact-storage.md#visto-home).
 
 ## Run a bounded test
 
@@ -79,13 +97,14 @@ fetches once per UTC day (at start, then checked hourly) and keeps per day, so
 each run is priced with the list of the day it was created. Runs older than the
 first stored list are priced with it and marked "≈"; models without a price are
 named, never guessed. Rates are base input/output prices; verify with the
-provider before budgeting. Set `VISTO_PRICE_REFRESH=off` to keep the backend
-from contacting the price source (costs then stay unpriced).
+provider before budgeting. Turn off "Refresh model prices daily" in Settings to
+keep the backend from contacting the price source; costs then use the lists already
+stored, and stay unpriced if none was ever fetched.
 
 Only one web execution session is retained at a time, including paused and
-waiting-for-answer runs. Finish or cancel it before creating another. Repository
-device leases also coordinate with the CLI; unrelated Appium clients are outside
-that cooperative lock.
+waiting-for-answer runs. Finish or cancel it before creating another. Device
+leases in the Visto home also coordinate with the CLI; unrelated Appium clients are
+outside that cooperative lock.
 
 ## Disconnect, restart and privacy
 
@@ -96,8 +115,8 @@ action replay is supported. A previous-process unfinished run stays inspectable
 but cannot resume; reconcile surviving leases/Appium work before a fresh run.
 See [artifact storage and recovery](artifact-storage.md).
 
-Metadata and screenshots use `.work/runs` by default; device ownership uses the
-shared `.work/device-leases`. The local API exposes test content and screenshots
+Metadata and screenshots live in `~/.visto/data`; device ownership uses the
+shared `~/.visto/data/device-leases`. The local API exposes test content and screenshots
 to local readers. Do not share or publish these services. Evidence has no automatic
 retention expiry and exports may contain private test text. Provider transmission
 is remote inference; local storage does not imply provider zero retention.

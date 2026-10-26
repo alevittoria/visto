@@ -17,7 +17,7 @@ from urllib.request import Request, build_opener
 import pytest
 
 from visto.adapters.ai import http_worker
-from visto.adapters.ai.transport import MAX_RESPONSE_BYTES, request_response
+from visto.adapters.ai.transport import MAX_RESPONSE_BYTES, probe_model, request_response
 from visto.application.ports import PortError
 
 
@@ -288,3 +288,56 @@ def test_redirect_response_cannot_forward_credentials_or_images(monkeypatch):
         opener.error("https", request, BytesIO(), 302, "Found", headers)
     assert error.value.code == 302
     error.value.close()
+
+
+def test_worker_probe_uses_fixed_get(monkeypatch):
+    seen = []
+
+    def fake(request, *, timeout):
+        seen.append(request)
+        return BytesIO(b'{"id":"gpt-6-luna"}')
+
+    monkeypatch.setattr(http_worker, "urlopen", fake)
+    packet = {"api_key": "k", "probe_model": "gpt-6-luna", "timeout_ms": 1000}
+    assert http_worker.handle_packet(json.dumps(packet).encode()) == {
+        "response": {"id": "gpt-6-luna"}
+    }
+    request = seen[0]
+    assert request.full_url == "https://api.openai.com/v1/models/gpt-6-luna"
+    assert request.get_method() == "GET" and request.data is None
+    assert request.get_header("Authorization") == "Bearer k"
+
+
+@pytest.mark.parametrize("model", ["../v1/responses", "a/b", "a b", "", "x" * 129, 5, "m?x=1"])
+def test_worker_probe_rejects_invalid_model_before_request(monkeypatch, model):
+    calls = []
+    monkeypatch.setattr(http_worker, "urlopen", lambda *a, **kw: calls.append(a))
+    packet = {"api_key": "k", "probe_model": model, "timeout_ms": 1000}
+    assert http_worker.handle_packet(json.dumps(packet).encode()) == {
+        "error": "provider: invalid_request"
+    }
+    assert calls == []
+
+
+def test_worker_probe_packet_rejects_extra_fields(monkeypatch):
+    monkeypatch.setattr(http_worker, "urlopen", lambda *a, **kw: pytest.fail("request"))
+    packet = {"api_key": "k", "probe_model": "m", "timeout_ms": 1000, "payload": "e30="}
+    assert http_worker.handle_packet(json.dumps(packet).encode()) == {
+        "error": "provider: invalid_request"
+    }
+
+
+def test_parent_probe_sends_no_payload_and_validates_model():
+    script = (
+        "import json,sys; p=json.load(sys.stdin); "
+        "assert set(p)=={'api_key','probe_model','timeout_ms'} and p['probe_model']=='gpt-6-luna'; "
+        "print(json.dumps({'response':{'id':'gpt-6-luna'}}))"
+    )
+
+    async def scenario():
+        spawn, _, _, _ = local_worker(script)
+        assert await probe_model("k", "gpt-6-luna", 3000, _spawn=spawn) == {"id": "gpt-6-luna"}
+        with pytest.raises(PortError, match="^provider: invalid_request$"):
+            await probe_model("k", "../bad", 3000, _spawn=spawn)
+
+    asyncio.run(scenario())

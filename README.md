@@ -92,46 +92,31 @@ path is code-complete but unobserved.
 
 You need:
 
-- [uv](https://docs.astral.sh/uv/) (it provides Python 3.12) and Node 24 with
-  pnpm (`corepack enable`);
-- the Android SDK platform-tools and build-tools plus a JDK 17 or newer, with
-  `ANDROID_HOME` and `JAVA_HOME` set (Android Studio installs all of them);
+- [uv](https://docs.astral.sh/uv/getting-started/installation/), the only tool you
+  install by hand (it also provides Python);
 - an OpenAI API key with access to a vision model;
-- an Android 8+ device with USB debugging enabled, connected and authorized
-  (`adb devices` shows it as `device`).
+- an Android 8+ device with USB debugging enabled, connected and authorized.
 
-Install once, from the repository root:
-
-```sh
-git clone https://github.com/alevittoria/visto.git
-cd visto
-cp .env.example .env          # set OPENAI_API_KEY
-uv sync --project backend --locked
-cd frontend
-pnpm install --frozen-lockfile
-cd ../tools/appium
-pnpm install --frozen-lockfile --ignore-scripts --node-linker=hoisted
-cd ../..
-```
-
-Then start three processes, each in its own terminal from the repository root:
+Copy the wheel URL of the release you want from the
+[releases page](https://github.com/alevittoria/visto/releases), then:
 
 ```sh
-# 1. Appium
-cd tools/appium
-pnpm start
-
-# 2. Backend
-uv run --project backend --locked --no-sync python -m uvicorn visto.composition:create_app --factory --host 127.0.0.1 --port 8000
-
-# 3. Web console
-cd frontend
-pnpm dev
+uv tool install https://github.com/alevittoria/visto/releases/download/v<version>/visto-<version>-py3-none-any.whl
+uv tool update-shell   # once: puts uv's tool folder on PATH; then open a new terminal
+visto start            # first start downloads Node, a JDK, the Android SDK tools and Appium
 ```
 
-Open <http://127.0.0.1:5173>, pick your device, describe the goal and start the run.
+If `visto` is not recognised as a command, the terminal was opened before
+`uv tool update-shell`: open a new one. The first `visto start` asks you to accept
+the Android SDK license and installs its toolchain into `~/.visto`; later starts
+reuse it. Visto installs nothing system-wide and changes no environment variable;
+Android Studio is not needed. `start` runs Appium and opens the console at
+<http://127.0.0.1:8000/>. While no provider key is configured, the console opens on
+its Settings page: paste the API key there, then pick your device, describe the
+goal and start the run. `visto doctor` checks the setup when something does not
+work.
 
-- Full installation guide, per-OS environment variables and checks:
+- Full installation guide, proxies, upgrade and uninstall:
   [installation](docs/local-development.md)
 - Device preparation and wireless debugging: [Android setup](docs/android-setup.md)
 - iOS simulators and iPhones (macOS only): [iOS setup](docs/ios-setup.md)

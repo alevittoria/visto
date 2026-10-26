@@ -3,10 +3,16 @@
 Local-only API. JSON field names use snake_case. Run/state data is
 stored AI/runtime output, never a controller-derived semantic verdict.
 
-All routes are under `/api`. Read routes return `Cache-Control: no-store`.
+All routes are under `/api`; outside it, the backend of an installed release
+serves the built console at `/` (any other path falls back to its `index.html`).
+Read routes return `Cache-Control: no-store`. Every response, including the served
+console, carries `Cross-Origin-Resource-Policy: same-origin`, so another origin
+cannot embed screenshots or other responses (for example through `<img>`).
 Every request, reads included, requires a loopback Host (`localhost`, `127.0.0.1`
 or `[::1]`, any port); any other Host gets 403, so a DNS-rebound page cannot read
-run history or screenshots. Every POST requires `X-Visto: local-console` and a loopback Host.
+run history or screenshots. Every POST, PUT and DELETE requires
+`X-Visto: local-console` and a loopback Host, and is refused when
+`Sec-Fetch-Site` is present and not `same-origin` or `none`.
 When Origin is supplied it must equal the request origin. The Vite proxy is
 configured with `changeOrigin: false` so it forwards the browser Host; Vite's
 string shorthand would rewrite Host and every console POST would get 403.
@@ -22,18 +28,21 @@ with `detail` naming only invalid field locations, never submitted values.
   model, models, appium_url, device_selection:"manual", devices:[], active_run_id,
   cleanup_attention_run_ids, execution_available, default_limits, platforms}`.
   `platforms` lists the platforms (`"android"`, `"ios"`) whose device sources this
-  process has configured; it is derived from configuration, not from attached devices. Configuration-only: no device/provider
+  process has configured (iOS sources only on macOS); it is derived from configuration,
+  not from attached devices. Configuration-only: no device/provider
   network calls and no Appium session. Operator enters the exact authorized ADB
   serial (or picks one from `GET /devices`); physical connectivity is checked
-  when a run starts. Readiness itself never runs adb. Credentials
-  resolve server-side from process environment then repository-root `.env`.
+  when a run starts. Readiness itself never runs adb. The provider key is read
+  server-side from the settings store in the Visto home; `configuration_error` is
+  set when the settings files cannot be used.
   `model` is the default; `models` is the operator-selectable allowlist
   (`gpt-6-luna` default, `gpt-5.6-terra`, `gpt-6-sol`).
 - `GET /devices`: `{available, devices:[{serial,platform,state,model,product,selectable}],
   error, notes}`. `platform` is `"android"` or `"ios"`. Android entries come from one
-  fixed, read-only `adb devices -l` (5 s timeout, one at a time; adb is found via
-  ANDROID_HOME, ANDROID_SDK_ROOT, the default Windows SDK or PATH); iOS entries come
-  from Xcode's command-line tools. `selectable` is platform-specific: adb state
+  fixed, read-only `adb devices -l` (5 s timeout, one at a time) with the managed
+  `adb` of the Visto home's toolchain, or, when the home has none, an adb found via
+  ANDROID_HOME, ANDROID_SDK_ROOT, the default Windows SDK or PATH; iOS entries come
+  from Xcode's command-line tools and are listed only on macOS. `selectable` is platform-specific: adb state
   `device` for Android, `booted` or `connected` for iOS; other states (unauthorized,
   offline, shutdown) are listed but not selectable. Failures return `available:false` and a safe
   `error` without process output. It may start the local adb server. The console
@@ -44,7 +53,7 @@ with `detail` naming only invalid field locations, never submitted values.
   max_observation_delay_ms:10000}}`. Optional fields use those defaults.
   `model` null means the default; a value outside `models` returns 422.
   `platform` is `"android"` (default, so existing callers are unchanged) or `"ios"`;
-  any other value returns 422. Creation lists no devices: a device that does not match
+  any other value, or `"ios"` when `platforms` does not list it, returns 422. Creation lists no devices: a device that does not match
   the platform fails closed when the session starts. The stored run records the
   platform only through its adapter and instruction version strings.
   Returns a Run. Exactly one retained execution session; a paused or waiting run
@@ -64,6 +73,38 @@ Limits: wall time 1..3600000 ms, actions/inferences 1..300, command timeout
 1..60000 ms, observation delay 1..60000 ms. Text goal max 16000 characters;
 expected result max 8000; up to 32 constraints of max 2000 characters each.
 Device serial max 256 characters. Strings must contain non-whitespace text.
+
+## Settings
+
+Settings are stored in the Visto home and read when used, so changes apply to the
+next run without a restart. Every write uses the local-console guard above.
+`503 Local settings are invalid` means a settings or secrets file cannot be used.
+
+- `GET /settings`: `{price_refresh, ios_supported, ios, key:{configured, last4,
+  storage:"file"}, wda_project, wda_rebuild_needed}`. `ios` is
+  `{team_id, signing_id, wda_bundle_id, prebuilt_wda, wda_derived_data}` when the
+  host supports iOS (macOS) and null otherwise; `wda_project` is the
+  WebDriverAgent project path inside the managed Appium install or null;
+  `wda_rebuild_needed` is true when the installed XCUITest driver differs from the
+  one recorded when the iOS values were last saved. The key itself is never
+  returned by any route.
+- `PUT /settings`: `{price_refresh, ios?}` with the `ios` fields above (strings of
+  at most 64/256/256/1024 characters, `prebuilt_wda` a boolean; unknown fields are
+  rejected). Omitting `ios` keeps the stored values; sending it on a host without
+  iOS support returns 422. Saving `ios` records the installed XCUITest driver
+  version. Returns the `GET /settings` view.
+- `PUT /settings/key`: `{api_key}` (at most 8192 characters). Stores the key and
+  returns `{configured, last4, storage}`. An empty key or one containing
+  whitespace or control characters returns 422 with a message that never contains
+  the value.
+- `DELETE /settings/key`: removes the stored key; returns `{configured:false,
+  last4:null, storage}`.
+- `POST /settings/key/verify`: `{result}` with `result` one of `ok`, `missing`,
+  `unauthorized`, `model_unavailable` or `unreachable`. Retrieves the default
+  model's metadata (`GET https://api.openai.com/v1/models/{model}`, 10 s timeout)
+  with the stored key through the fixed HTTPS worker; no inference, not billed.
+  401/403 map to `unauthorized`, 404 to `model_unavailable`, any other failure to
+  `unreachable`.
 
 ## Inspection
 
@@ -96,7 +137,8 @@ Device serial max 256 characters. Strings must contain non-whitespace text.
   {model:{day, input_per_m, output_per_m}}}` for the selectable models. Read-only;
   it never fetches. The backend fetches the public AI Pricing Guru list at start
   and checks hourly, storing at most one snapshot per UTC day in
-  `<data dir>/prices.sqlite3`; `VISTO_PRICE_REFRESH=off` disables fetching.
+  `<data dir>/prices.sqlite3`. The `price_refresh` setting (see Settings below)
+  disables fetching when false; `refresh_enabled` reports it.
 - `GET /runs/{run_id}/events?after=0&limit=100`: `{events:[{sequence,kind,data}],
   next_after}`. Sequence is 1-based position in durable run history; after is the
   last consumed sequence. Event kinds are `observation`, `agent_decision`,

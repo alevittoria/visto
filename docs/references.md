@@ -7,8 +7,6 @@ establish live integration acceptance.
 - [Official OpenAI documentation — subagents and custom agent schema](https://learn.chatgpt.com/docs/agent-configuration/subagents):
   role-based task delegation, inherited permissions, explicit ownership and
   standalone project-agent TOML definitions.
-- [Appium WebDriver reference](https://appium.io/docs/en/3.0/reference/api/webdriver/):
-  Android adapter operations, including screenshots and actions.
 - [Computer-use agent loop](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool):
   conceptual reference for observe/act/observe; this does not select Anthropic as
   the product provider or imply a desktop tool works directly on Android.
@@ -59,8 +57,8 @@ establish live integration acceptance.
   session lifecycle, screenshots and touch pointer actions. Appium 3 and current
   UiAutomator2 are installed from the locked `tools/appium` package, not globally.
 - [Appium rotation](https://appium.io/docs/en/latest/reference/api/appium/#getappiumrotation),
-  [WebDriver wire methods](https://appium.io/docs/en/latest/reference/api/webdriver/):
-  live frame checks; UiAutomator2 `mobile: pressKey` accepts allowlisted Android keys
+  [Appium WebDriver reference](https://appium.io/docs/en/latest/reference/api/webdriver/):
+  device adapter operations, including screenshots, actions and live frame checks; UiAutomator2 `mobile: pressKey` accepts allowlisted Android keys
   ([KeyEvent](https://developer.android.com/reference/android/view/KeyEvent):
   KEYCODE_HOME 3, KEYCODE_BACK 4, KEYCODE_ENTER 66). long_press is a touch pointer
   sequence with a [W3C pause action](https://www.w3.org/TR/webdriver2/#actions).
@@ -95,10 +93,26 @@ establish live integration acceptance.
 
 - [FastAPI first steps](https://fastapi.tiangolo.com/tutorial/first-steps/):
   app factory, typed routes and ASGI application entry point.
+- [Uvicorn](https://www.uvicorn.org/): `uvicorn.Config` plus
+  `uvicorn.Server(config).run()` serve the app in-process for `visto start`.
+  `visto start` also overrides `Server.on_tick(counter)`, which is not documented;
+  this was read from the installed source of the pinned uvicorn 0.54.0
+  (`uvicorn/server.py`), not from the documentation. There, `main_loop`
+  calls it once after startup and then every 0.1 s, and returning true stops the
+  server with the normal shutdown. The override reports readiness on the first tick
+  and stops the server when the managed Appium has exited, delegating to the base
+  method otherwise. The same source calls `sys.exit` when startup (binding or the
+  lifespan) fails, which `visto start` turns into an error message. Recheck both
+  when the uvicorn pin changes.
 - [FastAPI testing](https://fastapi.tiangolo.com/tutorial/testing/) and
   [Starlette TestClient](https://starlette.dev/testclient/): in-process HTTP checks;
   current Starlette uses httpx2 and deprecates plain httpx. Follow the installed
   runtime's compatibility guidance when these examples differ.
+- [Cross-Origin-Resource-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Resource-Policy)
+  and the [Fetch standard's CORP check](https://fetch.spec.whatwg.org/#cross-origin-resource-policy-header):
+  `same-origin` makes browsers block no-cors subresource loads (such as `<img>`) from
+  other origins; it does not apply to top-level navigations or downloads, so the
+  same-origin console and report downloads are unaffected.
 - [uv locking and syncing](https://docs.astral.sh/uv/concepts/projects/sync/) and
   [building distributions](https://docs.astral.sh/uv/guides/package/): package lock,
   locked installation and distributable backend.
@@ -175,6 +189,14 @@ retry arbitrary failures or infer orientation.
   with `isTypeSupported` and [getUserMedia](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia),
   which requires a secure context (localhost counts).
 
+## Provider key check
+
+- [Retrieve model reference](https://developers.openai.com/api/reference/resources/models/methods/retrieve):
+  `GET /v1/models/{model}` with a bearer key returns the model object (`id`,
+  `created`, `object`, `owned_by`) and runs no inference, so the settings key
+  check probes the default model without cost. 401/403 mean a rejected key, 404
+  an unavailable model.
+
 ## iOS
 
 - [Running your app in Simulator or on a device](https://developer.apple.com/documentation/xcode/running-your-app-in-simulator-or-on-a-device):
@@ -212,12 +234,29 @@ retry arbitrary failures or infer orientation.
   folder that should be used for derived data") when the operator names the
   build's derived data folder; with both, the installed driver runs
   `xcodebuild test-without-building -derivedDataPath <path>`. `appium:xcodeOrgId` (team identifier, effective only
-  with `appium:xcodeSigningId`), `appium:xcodeSigningId` (certificate name) and
+  with `appium:xcodeSigningId`), `appium:xcodeSigningId` (certificate type such as `Apple Development`; a full
+  certificate name conflicts with WebDriverAgent's automatic signing, which
+  `xcodebuild` reports as conflicting provisioning settings) and
   `appium:updatedWDABundleId` (WebDriverAgent bundle identifier, which needs a matching
   provisioning profile) carry the signing values; they are configuration, never logged.
   `appium:usePreinstalledWDA` is the alternative for iOS 17 or newer, which launches an
   installed runner without `xcodebuild`; it is not used, since the pre-step builds and
   installs WebDriverAgent itself.
+- `appium:useNewWDA`, read in the installed driver 12.19.1 source
+  (`build/lib/commands/wda/startup.js`, `prepareForXcodebuild`): when true and
+  `xcodebuild` is needed, the driver quits and uninstalls WebDriverAgent before starting
+  a new one; when false it first tries to reuse a running WebDriverAgent
+  (`setupCaching`). The adapter sets it only for one retry, after the session's first
+  request answered "Not authorized for performing UI testing actions", or that a
+  previously found element's application "is not running": the answers of a reused
+  WebDriverAgent that a stopped Appium left on the phone. The capability page warns that real devices work best
+  without reinstalling WebDriverAgent, hence once per run and only for that cause.
+- The driver's `tunnel-creation` script (installed driver 12.19.1,
+  `scripts/tunnel-creation.mjs`): must run as root, builds tunnels only for phones
+  connected by USB when it starts (and for wireless Apple TV), exits when it finds
+  none, and serves a registry on port 42314 with
+  `GET /remotexpc/tunnels/:udid?waitMs=<ms>` ("long-poll until catalog ready"). Read
+  from the script source and its log output, not from a separate documentation page.
 - [`mobile: pressButton`](https://appium.github.io/appium-xcuitest-driver/latest/reference/execute-methods/):
   execute method taking `name`, case-insensitive; on iOS `home` is accepted, while
   `volumeup`/`volumedown` are real devices only. `home` is the adapter's home command.
@@ -277,3 +316,110 @@ retry arbitrary failures or infer orientation.
   signing detail to a separate provisioning-profile guide that was not read; the
   seven-day expiry and per-operator bundle identifier of a free team come from the
   approved design, not from this page.
+
+## Portable toolchain
+
+`backend/src/visto/toolchain/components.json` pins every archive `visto setup`
+downloads, per supported host, with the checksum published by the vendor. Every
+download is verified before extraction. Only the vendors' metadata (and, for zip
+archives, their central directories through HTTP range reads) were read to pick the
+pins; no archive was downloaded or installed, so the layouts given below for tar
+archives are the vendors' usual layouts, not observed ones.
+
+- [Node.js 24.19.0 distribution](https://nodejs.org/dist/v24.19.0/) and its
+  [SHASUMS256.txt](https://nodejs.org/dist/v24.19.0/SHASUMS256.txt): sha256 for
+  `node-v24.19.0-win-x64.zip` and the `darwin-arm64`, `darwin-x64` and `linux-x64`
+  `.tar.xz` archives. Each extracts to one top folder named after the file; on
+  Windows `node.exe` is at its root, elsewhere `bin/node` (with `bin/npm`, `bin/npx`
+  and `bin/corepack` as relative symbolic links into `lib/node_modules`). The Windows
+  zip's central directory confirms the single top folder `node-v24.19.0-win-x64`.
+- [Adoptium API v3](https://api.adoptium.net/q/swagger-ui/):
+  [`/v3/assets/latest/17/hotspot`](https://api.adoptium.net/v3/assets/latest/17/hotspot?architecture=x64&image_type=jdk&os=windows&vendor=eclipse)
+  lists the newest Temurin 17 GA JDK per OS and architecture, and
+  [`/v3/assets/release_name/eclipse/jdk-17.0.20.1+1`](https://api.adoptium.net/v3/assets/release_name/eclipse/jdk-17.0.20.1%2B1?image_type=jdk&jvm_impl=hotspot&heap_size=normal)
+  gives `package.link` and `package.checksum` (sha256) for each binary. The pin is
+  `jdk-17.0.20.1+1`, the newest GA release published for all four hosts: the newer
+  `jdk-17.0.21+9` had Linux x64 and macOS aarch64 binaries only. Archives extract to
+  `jdk-17.0.20.1+1/`; macOS archives keep the bundle layout, so `JAVA_HOME` is
+  `Contents/Home` there. The Windows zip's central directory confirms the top folder.
+- [Android SDK repository](https://dl.google.com/android/repository/repository2-3.xml):
+  `remotePackage` entries `platform-tools` (37.0.1) and `build-tools;37.0.0`, the
+  newest on `channel-0` (stable), with per-`host-os` archives (`windows`, `macosx`,
+  `linux`) whose `complete/url` is relative to `https://dl.google.com/android/repository/`
+  and whose `checksum` is sha1. The macOS archives carry no `host-arch`, so both macOS
+  hosts use the same files. Central directories (read by range requests) show the
+  platform-tools zips extract to `platform-tools/` and the build-tools 37 zips to
+  `android-37.0/`, not to the version number; neither contains symbolic links.
+  The manifest publishes only sha1 for these archives, so they are pinned with sha1
+  while Node and the JDK use sha256. This is an accepted residual risk: SHA-1 is
+  exposed to chosen-prefix collisions, so substituting a colliding archive would
+  also require control over the archive Google publishes or over the HTTPS
+  connection; the pins move to sha256 if the manifest starts publishing it.
+- [Python 3.12 `zipfile`](https://docs.python.org/3.12/library/zipfile.html),
+  [`tarfile`](https://docs.python.org/3.12/library/tarfile.html) (with its
+  [extraction-filter rationale](https://docs.python.org/3.12/library/tarfile.html#tarfile-extraction-filter)),
+  [`hashlib`](https://docs.python.org/3.12/library/hashlib.html) and
+  [`ssl.create_default_context`](https://docs.python.org/3.12/library/ssl.html#ssl.create_default_context)
+  with `cafile`: stdlib verification, extraction and a custom CA bundle. Zip
+  symbolic links are recognised from the Unix mode in the high 16 bits of
+  `ZipInfo.external_attr` when `create_system` is 3. Extraction refuses absolute
+  paths, drive letters, `..`, special files and any link whose target leaves the
+  extraction folder, creating links last and resolving them afterwards.
+- [Python 3.12 `urllib.request`](https://docs.python.org/3.12/library/urllib.request.html):
+  downloads go through `build_opener` with an `HTTPSHandler(context=...)`, so the same
+  TLS context verifies every hop, and an `HTTPRedirectHandler` subclass whose
+  `redirect_request` refuses any target that is not HTTPS. The handler's own
+  `max_redirections` limit bounds the chain.
+- [Hatch wheel builder](https://hatch.pypa.io/latest/plugins/builder/wheel/): the
+  package directory is packaged whole, so `components.json` needs no extra
+  configuration; a locally built wheel lists `visto/toolchain/components.json`.
+- [Corepack](https://github.com/nodejs/corepack) and the
+  [Node.js 24 distribution](https://nodejs.org/dist/v24.19.0/): Corepack is distributed
+  with Node.js from 14.19.0 up to (not including) 25.0.0, so the pinned Node 24 bundles it
+  (`node_modules/corepack/dist/corepack.js` at the Windows root, `lib/node_modules/corepack/dist/corepack.js`
+  elsewhere). `COREPACK_HOME` sets where package managers are stored and
+  `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` suppresses the download prompt. `packageManager`
+  accepts `name@version+<algo>.<hex>`; Corepack's `corepackUtils.ts` compares that hex with
+  the digest of the downloaded tarball and, for npm packages, derives the expected value from
+  the registry `dist.integrity` (base64 sha512, hex-encoded). The pnpm 11.25.0 pin in
+  `tools/appium` therefore uses the hex form of the registry integrity from
+  `https://registry.npmjs.org/pnpm/11.25.0`. The check was read from source; Corepack was not run.
+- [Android SDK License Agreement](https://dl.google.com/android/repository/repository2-3.xml):
+  the `license` element with id `android-sdk-license` is stored verbatim (ends trimmed) in
+  `backend/src/visto/toolchain/android-sdk-license.txt`; the recorded acceptance is the sha256
+  of that text, so a changed text asks again.
+
+## Release packaging
+
+Releases are wheels attached to GitHub Releases by `.github/workflows/release.yml`;
+`scripts/build_release.py` stages the console and Appium locks into the package and
+`scripts/check_wheel.py` checks the result. The workflow has not been run from this
+repository yet; only its scripts were exercised locally.
+
+- [Hatch build configuration — artifacts](https://hatch.pypa.io/latest/config/build/#artifacts)
+  (read at the `hatchling-v1.32.4` tag): `artifacts` includes VCS-ignored files and is
+  otherwise equivalent to `include`. `backend/src/visto/console/` and
+  `backend/src/visto/toolchain/appium/` are git-ignored build inputs listed there; a
+  local wheel built without them still succeeds, and one built after
+  `build_release.py` lists them. A plain `uv build` goes through the sdist, which does
+  not carry them, so the release builds the wheel directly with `uv build --wheel`.
+- [uv URL sources](https://docs.astral.sh/uv/concepts/projects/dependencies/#url)
+  (uv 0.11.32 docs): a requirement may be an `https://` URL to a wheel ending in `.whl`,
+  and `uv tool install <PACKAGE>` takes such a requirement, so the documented install is
+  `uv tool install https://github.com/<owner>/<repo>/releases/download/v<version>/visto-<version>-py3-none-any.whl`.
+  Not checked: an install from a published release URL.
+- GitHub Actions, each pinned by the commit its release tag points to (lightweight tags,
+  resolved with `git ls-remote`; inputs read from `action.yml` at that commit):
+  [actions/checkout v7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1)
+  `3d3c42e5aac5ba805825da76410c181273ba90b1` (`persist-credentials`),
+  [astral-sh/setup-uv v10.3.2](https://github.com/astral-sh/setup-uv/releases/tag/v10.3.2)
+  `07a047e608db84b3d8c06cd9a7c7dcc9c355c18e` (`version`, `enable-cache`),
+  [actions/setup-node v7.1.0](https://github.com/actions/setup-node/releases/tag/v7.1.0)
+  `949feb2413d6458794dcd2491c4babbbce0c15c1` (`node-version`, `package-manager-cache`).
+- [GitHub CLI `gh release create`](https://cli.github.com/manual/gh_release_create):
+  creates the release for an existing tag, uploads the listed files and
+  `--generate-notes` writes the notes. Per
+  [`gh help environment`](https://cli.github.com/manual/gh_help_environment) it
+  authenticates with `GH_TOKEN`, here the job's token limited to `contents: write`, and
+  targets `GH_REPO`. The workflow runs only for a pushed `v*` tag, so the tag exists
+  and `gh` creates no tag of its own.

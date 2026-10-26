@@ -54,8 +54,9 @@ class AppiumDevice(AppiumSession):
         # appium-adb refuses every session when the Appium process has no SDK path.
         if "Neither ANDROID_HOME nor ANDROID_SDK_ROOT" in message:
             return (
-                "Appium cannot find the Android SDK; export ANDROID_HOME for the Appium "
-                "process, restart Appium and recover the retained device lease"
+                "Appium cannot find the Android SDK (ANDROID_HOME); stop that Appium, let "
+                "'visto start' or 'visto run' start the managed one, and recover the "
+                "retained device lease"
             )
         return None
 

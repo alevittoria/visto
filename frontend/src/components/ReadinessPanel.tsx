@@ -6,9 +6,10 @@ interface Props {
   state: ReadinessState;
   onRefresh: () => void;
   onOpenRun: (runId: string) => void;
+  onOpenSettings: () => void;
 }
 
-export function ReadinessPanel({ health, state, onRefresh, onOpenRun }: Props) {
+export function ReadinessPanel({ health, state, onRefresh, onOpenRun, onOpenSettings }: Props) {
   const { readiness, connected } = state;
   const tone = !connected ? 'disconnected' : readiness?.configured ? 'connected' : 'warning';
   const title = !connected
@@ -40,7 +41,9 @@ export function ReadinessPanel({ health, state, onRefresh, onOpenRun }: Props) {
       </div>
       {connected && readiness && (
         <dl className="facts">
-          <div><dt>AI provider key</dt><dd>{readiness.provider_key_configured ? 'Configured on server' : 'Missing'}</dd></div>
+          <div><dt>AI provider key</dt><dd>{readiness.provider_key_configured
+            ? 'Configured'
+            : <>Missing<button type="button" className="link" onClick={onOpenSettings}>Open settings</button></>}</dd></div>
           <div><dt>AI model</dt><dd>{readiness.model ?? 'Not set'}</dd></div>
           <div><dt>Device automation service</dt><dd>{readiness.appium_url ?? 'Not set'}</dd></div>
           <div>

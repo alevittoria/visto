@@ -198,3 +198,78 @@ def test_one_failing_source_still_returns_the_other_and_names_the_failure(monkey
     )
     with pytest.raises(InventoryUnavailable, match="simctl reported"):
         asyncio.run(list_devices(xcrun))
+
+
+UDID = "00008000-000A000A00000000"
+
+
+def waking_run(calls, *, after_wake="connected", wake_outcome=0):
+    """A fake xcrun whose phone reads `after_wake` once an info call has reached it."""
+    woken = []
+
+    def fake_run(command, **options):
+        calls.append((command, options))
+        if "details" in command:
+            woken.append(command)
+            if isinstance(wake_outcome, BaseException):
+                raise wake_outcome
+            return subprocess.CompletedProcess(command, wake_outcome, stdout=b"")
+        state = after_wake if woken else "disconnected"
+        return subprocess.CompletedProcess(
+            command, 0, stdout=payload(physical(UDID, state=state)).encode()
+        )
+
+    return fake_run
+
+
+def test_refresh_connects_a_paired_phone_that_is_not_connected(monkeypatch):
+    calls = []
+    monkeypatch.setattr(inventory.subprocess, "run", waking_run(calls))
+    devices = asyncio.run(list_physical(Path("/x/xcrun")))
+    assert [d.state for d in devices] == ["connected"]
+    assert [c[0][1:5] for c in calls] == [
+        ["devicectl", "list", "devices", "--quiet"],
+        ["devicectl", "device", "info", "details"],
+        ["devicectl", "list", "devices", "--quiet"],
+    ]
+    wake = calls[1][0]
+    assert wake[wake.index("--device") + 1] == UDID
+    assert "--timeout" in wake and "shell" not in calls[1][1]
+    assert calls[1][1]["stdin"] == subprocess.DEVNULL
+
+
+def test_a_connected_phone_is_not_contacted_again(monkeypatch):
+    calls = []
+
+    def fake_run(command, **options):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=payload(physical(UDID)).encode())
+
+    monkeypatch.setattr(inventory.subprocess, "run", fake_run)
+    asyncio.run(list_physical(Path("/x/xcrun")))
+    assert len(calls) == 1
+
+
+def test_an_unpaired_phone_is_not_contacted(monkeypatch):
+    calls = []
+
+    def fake_run(command, **options):
+        calls.append(command)
+        text = payload(physical(UDID, state="disconnected", pairing="unpaired"))
+        return subprocess.CompletedProcess(command, 0, stdout=text.encode())
+
+    monkeypatch.setattr(inventory.subprocess, "run", fake_run)
+    devices = asyncio.run(list_physical(Path("/x/xcrun")))
+    assert len(calls) == 1 and devices[0].state == "unavailable"
+
+
+@pytest.mark.parametrize("outcome", [subprocess.TimeoutExpired("secret", 1), OSError("secret"), 1])
+def test_a_failed_wake_leaves_the_phone_listed_as_unavailable(monkeypatch, outcome):
+    calls = []
+    monkeypatch.setattr(
+        inventory.subprocess,
+        "run",
+        waking_run(calls, after_wake="disconnected", wake_outcome=outcome),
+    )
+    devices = asyncio.run(list_physical(Path("/x/xcrun")))
+    assert [d.state for d in devices] == ["unavailable"]

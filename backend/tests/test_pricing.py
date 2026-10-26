@@ -12,7 +12,9 @@ from fastapi.testclient import TestClient
 
 from visto.adapters.api.service import ExecutionService, WebSettings
 from visto.adapters.pricing import PriceSheet, SQLitePriceStore, parse_prices
+from visto.adapters.settings.store import Settings, SettingsStore
 from visto.composition import create_app
+from visto.home import VistoHome
 
 DOCUMENT = {
     "lastUpdated": "2026-10-16T00:10:09.511Z",
@@ -85,9 +87,10 @@ class FixedClock:
 
 
 def test_refresh_fetches_once_per_utc_day_and_reports_failures(directory):
+    store = SettingsStore(VistoHome(directory / "home"))
+    store.set_api_key("dummy-key")
     service = ExecutionService(
-        WebSettings(directory, directory / ".env", directory / "leases", models=("fictional-1",)),
-        key_resolver=lambda _: "dummy-key",
+        WebSettings(directory, store, directory / "leases", models=("fictional-1",)),
     )
     calls = []
 
@@ -120,3 +123,26 @@ def test_refresh_fetches_once_per_utc_day_and_reports_failures(directory):
     assert body["models"] == {
         "fictional-1": {"day": "2026-10-17", "input_per_m": 0.1, "output_per_m": 0.5}
     }
+
+
+def test_price_refresh_switch_is_read_per_refresh(directory):
+    store = SettingsStore(VistoHome(directory / "home"))
+    store.save(Settings(price_refresh=False))
+    service = ExecutionService(WebSettings(directory, store, directory / "leases"))
+    calls = []
+
+    def fetch():
+        calls.append(1)
+        return PriceSheet(None, {"fictional-1": (0.1, 0.5)})
+
+    async def scenario():
+        await service.open()
+        service.price_fetcher = fetch
+        service.clock = FixedClock(datetime(2026, 10, 16, 23, tzinfo=UTC))
+        assert await service.refresh_prices() is False
+        assert calls == []
+        store.save(Settings(price_refresh=True))
+        assert await service.refresh_prices() is True
+        assert len(calls) == 1
+
+    asyncio.run(scenario())

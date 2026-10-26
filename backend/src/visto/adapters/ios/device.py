@@ -2,8 +2,9 @@
 
 import asyncio
 import base64
-import os
+import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote
 
@@ -11,26 +12,39 @@ from visto.adapters.appium.png import png_size
 from visto.adapters.appium.session import AppiumSession
 from visto.adapters.appium.wire import MAX_RESPONSE, HttpWire, Wire
 from visto.adapters.ios.geometry import Frame, frame, to_points
-from visto.application.ports import PortError
+from visto.adapters.ios.signing import IOSSigning
+from visto.application.ports import OperatorActionRequired, PortError
 from visto.application.runtime import utc_now
 from visto.domain.commands import Back, Enter, Home, LongPress, Swipe, Tap, TypeText
 from visto.domain.models import CapturedImage, DeviceLease
+
+_LOG = logging.getLogger(__name__)
 
 # WebDriverAgent reports the interface orientation in the same vocabulary as Android.
 ROTATIONS = (0, 90, 180, 270)
 # Duration of the left-edge back gesture; long enough for iOS to recognise a drag.
 BACK_SWIPE_MS = 300
-# WebDriverAgent signing values; secrets, so they are read here and never logged.
-SIGNING = (
-    ("appium:xcodeOrgId", "VISTO_IOS_TEAM_ID"),
-    ("appium:xcodeSigningId", "VISTO_IOS_SIGNING_ID"),
-    ("appium:updatedWDABundleId", "VISTO_IOS_WDA_BUNDLE_ID"),
+
+# Immutable default: no signing values, no prebuilt-WDA claim.
+UNSIGNED = IOSSigning()
+
+# Answers of a WebDriverAgent that an earlier Appium left running on the phone after
+# its test session ended (for example when `visto start` stopped): the driver reuses it
+# and it can no longer drive the UI. Recognised only while a new session is confirmed:
+# later, "is not running" may be the app under test that stopped.
+STALE_RUNNER_MARKS = (
+    ("Not authorized for performing UI testing actions",),
+    ("previously found element", "is not running"),
 )
-_DISABLED = ("", "0", "false", "no")
+STALE_RUNNER_HINT = (
+    "WebDriverAgent on the phone is not authorised for UI testing; close the"
+    " WebDriverAgent app on the phone, check that UI Automation is enabled in the"
+    " phone's Developer settings, and start the run again"
+)
 
 
-def _setting(name: str) -> str:
-    return os.environ.get(name, "").strip()
+class StaleRunner(OperatorActionRequired):
+    """The session reached a WebDriverAgent that cannot drive the UI any more."""
 
 
 class XCUITestDevice(AppiumSession):
@@ -41,9 +55,11 @@ class XCUITestDevice(AppiumSession):
         server_url: str,
         lease_directory: Path,
         *,
+        signing: IOSSigning = UNSIGNED,
         request_timeout_ms: int = 30000,
         cleanup_timeout_ms: int = 5000,
         wire: Wire | None = None,
+        prepare: Callable[[str, float], object] | None = None,
     ):
         super().__init__(
             "ios",
@@ -53,6 +69,15 @@ class XCUITestDevice(AppiumSession):
             request_timeout_ms=request_timeout_ms,
             cleanup_timeout_ms=cleanup_timeout_ms,
         )
+        self._signing = signing
+        # Called with (device id, seconds) before a session is requested: `visto start`
+        # passes one that brings the iOS tunnel back for a phone plugged in later.
+        self._prepare = prepare
+        # Set for one retry only: asks the driver to replace the runner on the phone.
+        self._new_runner = False
+        # True while a new session's first request runs: the only time a stale runner
+        # can be told apart from the app under test.
+        self._confirming = False
         # Point geometry of the last capture, paired with the image it was derived from:
         # a frame can never convert coordinates for a different screenshot.
         self._frame: tuple[CapturedImage, Frame] | None = None
@@ -69,30 +94,77 @@ class XCUITestDevice(AppiumSession):
             "appium:shouldTerminateApp": False,
             "appium:newCommandTimeout": 120,
         }
-        # A run never builds WebDriverAgent; building and installing it is an operator
-        # pre-step, and the operator declares it by setting this variable.
-        if _setting("VISTO_IOS_PREBUILT_WDA").lower() not in _DISABLED:
-            capabilities["appium:usePrebuiltWDA"] = True
-        # The driver opens WebDriverAgent by its resolved path, so Xcode's default
-        # derived data for a build made through a symlinked path is not found.
-        derived_data = _setting("VISTO_IOS_WDA_DERIVED_DATA")
-        if derived_data:
-            capabilities["appium:derivedDataPath"] = str(Path(derived_data).expanduser())
-        for capability, variable in SIGNING:
-            value = _setting(variable)
-            if value:
-                capabilities[capability] = value
+        # Signing and the prebuilt-WDA flag come from the stored settings; a run never
+        # builds WebDriverAgent.
+        capabilities.update(self._signing.capabilities())
+        if self._new_runner:
+            # The driver quits and uninstalls the runner it would otherwise reuse, then
+            # builds and starts a new one (driver source; see docs/references.md).
+            capabilities["appium:useNewWDA"] = True
         return capabilities
+
+    def diagnose(self, message):
+        # The driver lists no such device: the phone is not on USB, or no tunnel runs.
+        if "Unknown device or simulator UDID" in message:
+            return (
+                "Appium cannot see the phone; connect it with a USB cable, unlock it and"
+                " accept the trust prompt, then start the run again (from the console,"
+                " Visto starts the iOS tunnel for it unless it runs with --no-ios-tunnel)"
+            )
+        # The driver only reports xcodebuild's exit code; the reason is in its result.
+        if "Unable to launch WebDriverAgent" in message:
+            return (
+                "WebDriverAgent could not be built or installed on the phone; check the"
+                " signing values in Settings (Signing identity is the type, such as"
+                " 'Apple Development', not the full certificate name) and the trust prompt"
+                " on the phone, then read the xcodebuild result described in the iOS setup"
+                " guide"
+            )
+        if self._confirming and any(
+            all(part in message for part in mark) for mark in STALE_RUNNER_MARKS
+        ):
+            return STALE_RUNNER_HINT
+        return None
 
     async def acquire(self, run_id: str, device_id: str, timeout_ms: int) -> DeviceLease:
         """Confirm the created session answers before handing the lease out."""
         started = time.monotonic()
-        lease = await super().acquire(run_id, device_id, timeout_ms)
-        remaining = timeout_ms - int((time.monotonic() - started) * 1000)
+        if self._prepare is not None:
+            # At most half the startup budget: the session needs the rest.
+            try:
+                await asyncio.to_thread(self._prepare, device_id, timeout_ms / 2000)
+            except Exception:
+                # Best effort: without a tunnel the session fails with its own hint.
+                _LOG.warning("The iOS tunnel could not be prepared", exc_info=True)
+        deadline = started + timeout_ms / 1000
+        try:
+            return await self._open(run_id, device_id, deadline)
+        except StaleRunner:
+            # Once per run, and only after the stale session was deleted and its lease
+            # released: session creation drives no app, so this repeats no app action.
+            if self._ms_left(deadline) < 1:
+                raise
+            self._new_runner = True
+            try:
+                return await self._open(run_id, device_id, deadline)
+            finally:
+                self._new_runner = False
+
+    @staticmethod
+    def _ms_left(deadline: float) -> int:
+        return int((deadline - time.monotonic()) * 1000)
+
+    async def _open(self, run_id: str, device_id: str, deadline: float) -> DeviceLease:
+        lease = await super().acquire(run_id, device_id, max(1, self._ms_left(deadline)))
+        remaining = self._ms_left(deadline)
 
         def confirm(deadline, stop):
             self._owned(lease)
-            self._window(lease, deadline, stop)
+            self._confirming = True
+            try:
+                self._window(lease, deadline, stop)
+            finally:
+                self._confirming = False
 
         try:
             if remaining < 1:
@@ -100,16 +172,17 @@ class XCUITestDevice(AppiumSession):
             await self._run(confirm, remaining)
         except asyncio.CancelledError:
             raise  # Cancellation keeps the marker: the remote session may exist.
-        except Exception:
-            await self._reconcile(lease)  # Always raises.
+        except Exception as error:
+            await self._reconcile(lease, error)  # Always raises.
         return lease
 
-    async def _reconcile(self, lease) -> None:
+    async def _reconcile(self, lease, error: Exception) -> None:
         """At most one bounded delete of a session that was created but is not usable.
 
         Always raises: the marker only goes when that delete is certain. A confirmation
         worker still in flight blocks the delete before it is sent, which is the same
-        fail-closed outcome as a delete that failed: the marker is retained.
+        fail-closed outcome as a delete that failed: the marker is retained. Once the
+        device is released, a recognised cause keeps its fixed operator hint.
         """
         try:
             await self.release(lease)
@@ -117,6 +190,11 @@ class XCUITestDevice(AppiumSession):
             raise PortError(
                 f"{self._component}: session started but is unusable;"
                 " manual recovery may be required"
+            ) from None
+        if isinstance(error, OperatorActionRequired):
+            hint = str(error)
+            raise (StaleRunner if hint.endswith(STALE_RUNNER_HINT) else OperatorActionRequired)(
+                hint
             ) from None
         raise PortError(f"{self._component}: session started but is unusable; device released")
 

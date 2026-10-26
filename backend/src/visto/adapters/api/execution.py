@@ -146,7 +146,8 @@ async def prices(request: Request) -> dict:
         "source": SOURCE_NAME,
         "source_url": SOURCE_URL,
         "attribution": ATTRIBUTION,
-        "refresh_enabled": execution.price_fetcher is not None,
+        "refresh_enabled": execution.price_fetcher is not None
+        and execution.price_refresh_enabled(),
         "snapshot": latest,
         "last_attempt_at": execution.price_attempt_at,
         "error": execution.price_error,

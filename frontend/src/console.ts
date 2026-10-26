@@ -25,6 +25,8 @@ export interface Readiness {
   appium_url: string | null;
   device_selection: 'manual';
   devices: string[];
+  /** Platforms this server lists devices for; iOS only on a Mac. */
+  platforms: Platform[];
   active_run_id: string | null;
   execution_available: boolean;
   default_limits: Limits;
@@ -195,8 +197,8 @@ export interface RunEvent {
 
 export interface RunPage { runs: Run[]; limit: number; offset: number }
 export interface Snapshot { run: Run | null; events: RunEvent[]; connected: boolean; error: string | null; checkedAt: number | null }
-interface ApiOptions { method?: 'GET' | 'POST' | 'DELETE'; body?: unknown; audio?: Blob; signal?: AbortSignal; timeoutMs?: number }
-type Fetcher = (url: string, options: RequestInit) => Promise<Response>;
+interface ApiOptions { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; audio?: Blob; signal?: AbortSignal; timeoutMs?: number }
+export type Fetcher = (url: string, options: RequestInit) => Promise<Response>;
 export type Requester = <T>(path: string, options?: ApiOptions) => Promise<T>;
 
 const LOST = 'Connection lost. The run may still be active; reconnect before sending more commands.';
@@ -318,6 +320,12 @@ export function deviceLabel(device: AttachedDevice): string {
   return device.selectable ? name : `${name} — ${STATE_HINTS[device.platform][device.state] ?? device.state}`;
 }
 
+/** What to do when no device is listed; iOS is mentioned only where the server offers it. */
+export function emptyDeviceHint(platforms: Platform[]): string {
+  const ios = platforms.includes('ios') ? ', or boot an iOS simulator from Xcode' : '';
+  return `Connect an Android phone with USB debugging enabled${ios}, then press Refresh.`;
+}
+
 /** Keep a still-selectable choice; otherwise preselect the only selectable device. */
 export function reconcileDevice(current: string, devices: AttachedDevice[]): string {
   const selectable = devices.filter((device) => device.selectable);
@@ -341,7 +349,9 @@ export function parseReadiness(value: unknown): Readiness {
     ? v.cleanup_attention_run_ids.filter((id): id is string => typeof id === 'string') : [];
   const models = Array.isArray(v.models) ? v.models.filter((m): m is string => typeof m === 'string' && /\S/.test(m)) : [];
   if (models.length === 0 && typeof v.model === 'string') models.push(v.model);
-  return { ...v, models, device_selection: 'manual', devices: Array.isArray(v.devices) ? v.devices : [], cleanup_attention_run_ids: attention } as Readiness;
+  const platforms = Array.isArray(v.platforms)
+    ? v.platforms.filter((p): p is Platform => typeof p === 'string' && Object.hasOwn(PLATFORM_NAMES, p)) : [];
+  return { ...v, models, platforms, device_selection: 'manual', devices: Array.isArray(v.devices) ? v.devices : [], cleanup_attention_run_ids: attention } as Readiness;
 }
 
 /** Keep a still-offered model choice; otherwise use the server default. */

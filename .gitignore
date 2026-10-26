@@ -19,6 +19,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Release build inputs copied into the package by scripts/build_release.py
+backend/src/visto/console/
+backend/src/visto/toolchain/appium/
+
 # OS/editor local state
 .DS_Store
 Thumbs.db

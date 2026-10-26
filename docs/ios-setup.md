@@ -7,26 +7,27 @@ needs a Mac with Xcode, with the backend running on that Mac.
 ## Evidence
 
 Local checks cover iOS with unit tests against a faked Appium wire and faked
-`xcrun` output. On a phone, with the prebuilt WebDriverAgent found through
-`VISTO_IOS_WDA_DERIVED_DATA` and the developer profile trusted, a session
+`xcrun` output. On a phone, with a prebuilt WebDriverAgent found through an
+explicit derived data folder and the developer profile trusted, a session
 started and a run executed actions. A completed run, the simulator path, the
-`connected` state mapping and rotation on hardware have not been observed. The Appium and Xcode commands below follow the vendors' documentation
-(see [references](references.md#ios)); treat their exact output as
-unconfirmed until you run them. A run on iOS is not a validated acceptance.
+`connected` state mapping and rotation on hardware have not been observed. The
+Appium and Xcode commands below follow the vendors' documentation (see
+[references](references.md#ios)); treat their exact output as unconfirmed until
+you run them. A run on iOS is not a validated acceptance.
 
 ## Where iOS runs
 
-iOS needs macOS with Xcode. On a Mac the same backend lists Android and iOS
-devices in one picker, through one Appium with both drivers and the local Android
-SDK. Follow [installation](local-development.md) for the common steps, using
-`tools/appium/macos` as the Appium package; this page adds what iOS needs.
+iOS needs macOS with Xcode. On a Mac the same Visto lists Android and iOS devices
+in one picker, through one Appium with both drivers. Follow
+[installation](local-development.md) first; this page adds what iOS needs.
 
 ## Prerequisites
 
+- Visto installed and `visto setup` completed (see
+  [installation](local-development.md)).
 - macOS with Xcode installed and launched once so it accepts its license and
-  installs its components. `xcrun simctl` and `xcrun devicectl` must resolve.
-- Node as required by `tools/appium/macos/package.json` (the pinned version is in
-  [local development](local-development.md)) and pnpm 11.25.0.
+  installs its components. `xcrun simctl` and `xcrun devicectl` must resolve;
+  `visto doctor` checks both.
 - An Apple ID added in Xcode (Settings, Accounts). A free personal team is
   enough for a physical iPhone. A simulator needs no signing.
 - For a phone: a USB cable, the phone unlocked, Developer Mode enabled
@@ -34,65 +35,25 @@ SDK. Follow [installation](local-development.md) for the common steps, using
   to confirm), UI Automation enabled (Settings, Developer) and the Mac trusted
   on the phone.
 
-## Install Appium with both drivers
+## Appium with both drivers
 
-`tools/appium/macos/package.json` pins Appium, the UiAutomator2 driver and the
-XCUITest driver to exact versions, and `tools/appium/macos/pnpm-lock.yaml` locks
-the full dependency tree. `tools/appium/package.json`, used on Windows and
-Linux, has only the Android driver.
+On macOS, `visto setup` installs Appium with the UiAutomator2 and XCUITest drivers
+from the macOS lockfile shipped in the wheel (its source is
+`tools/appium/macos/`; `tools/appium/` on Windows and Linux has only the Android
+driver). The install lives in its own folder,
+`~/.visto/toolchain/appium/macos-<hash>/`, where `<hash>` identifies the lockfile;
+a release with a changed lockfile installs into a new folder and removes the old
+one. `visto start` runs that Appium on `127.0.0.1:4723` with the Android SDK and
+JDK paths in its own environment, so Android sessions work from the same server.
 
-Run pnpm from inside that directory, not with `--dir` from the repository root:
-corepack picks the pnpm version from the `packageManager` field of the current
-directory, and the root has none. Appium's install script is skipped and the
-drivers are discovered from a hoisted `node_modules`.
+The installed driver ships the WebDriverAgent Xcode project inside that folder.
+`visto doctor` and the Settings page show its exact path ("WebDriverAgent
+project"). Because each Appium install is a new folder, edits made to the project
+in Xcode, such as its bundle identifier, do not carry over to the next install; a
+build already in its derived data folder stays usable.
 
-```sh
-cd tools/appium/macos
-pnpm install --frozen-lockfile --ignore-scripts --node-linker=hoisted
-export ANDROID_HOME=<android-sdk>   # for example ~/Library/Android/sdk
-pnpm start
-```
-
-The XCUITest driver does not need `ANDROID_HOME`, but the same Appium serves
-Android too: started without it, UiAutomator2 refuses every Android session at
-once. The run then ends as an infrastructure failure at `device.acquire` whose
-detail says to export `ANDROID_HOME` for Appium, restart it and recover the
-retained device lease (see [Android setup](android-setup.md#exclusive-ownership-and-crash-recovery)).
-`pnpm doctor:android` reports a missing `ANDROID_HOME` too. Exporting it from
-the shell profile (for example `~/.zshrc`) keeps it set for every terminal.
-
-Keep `--node-linker=hoisted` on every reinstall. A plain `pnpm install` switches
-to pnpm's default isolated layout, moves the previous packages into
-`node_modules/.ignored_*` and puts the drivers behind symlinks, which changes the
-path the XCUITest driver opens WebDriverAgent from (see the pre-step below).
-Any reinstall also replaces the WebDriverAgent project, so edits made to it in
-Xcode, such as its bundle identifier, are lost; a build already in derived data
-stays usable.
-
-Run from that directory, Appium finds both drivers without `APPIUM_HOME`;
-`node node_modules/appium/index.js driver list --installed` lists them. Appium
-listens on `127.0.0.1:4723`, which is the default Appium URL of the backend and
-the CLI. Run only one Appium on that port at a time. Check each driver's own
-prerequisites with
-`pnpm doctor:ios` and `pnpm doctor:android` from the same directory.
-
-### Behind a TLS-inspecting proxy
-
-A proxy that re-signs HTTPS traffic with its own certificate authority makes
-corepack, pnpm and npm fail with `SELF_SIGNED_CERT_IN_CHAIN`, and makes the
-backend's provider requests fail certificate verification, because neither Node
-nor Python reads the macOS keychain by default. Export the proxy's certificates
-from the System keychain into a PEM file, then point each runtime at it:
-
-- Node, corepack and pnpm: `NODE_EXTRA_CA_CERTS=<proxy-ca.pem>`, which adds to
-  Node's own roots.
-- The backend's Python: `SSL_CERT_FILE=<bundle.pem>`, which *replaces* the
-  default roots, so the bundle must be the usual roots (for a Homebrew Python,
-  `/opt/homebrew/etc/openssl@3/cert.pem`) followed by the proxy certificates.
-
-Rebuild the bundle when the proxy's certificate authority or the base roots
-change. On Windows and Linux, export the proxy certificates from the system
-certificate store instead; the two variables work the same way.
+Behind a TLS-inspecting proxy, see
+[installation](local-development.md#behind-a-tls-inspecting-proxy).
 
 ## Signing values (physical phone)
 
@@ -107,31 +68,33 @@ against it:
 - after you re-sign, the phone asks you to trust the developer profile again
   (see [Trust the developer profile](#trust-the-developer-profile)).
 
-Set these in the environment of the process that starts the backend or the CLI.
-They are read from the process environment only, not from `.env`, and are never
-committed or echoed. To keep them in the ignored `.env` file anyway, export the
-file into the shell that starts the backend, from the repository root:
+Enter the values in the **iOS signing** section of the console's Settings page,
+which appears only when Visto runs on macOS, and press **Save settings**. They are
+stored in `settings.json` in the Visto home, are never printed (`visto doctor` and
+`visto settings show` report only whether each one is set) and apply to the next
+run without a restart.
 
-```sh
-set -a; source .env; set +a
-uv run --project backend --locked --no-sync python -m uvicorn visto.composition:create_app --factory --host 127.0.0.1 --port 8000
-```
-
-A running backend does not see later changes: restart it after editing them.
-
-| Variable | Appium capability | Meaning |
+| Settings field | Appium capability | Meaning |
 |---|---|---|
-| `VISTO_IOS_TEAM_ID` | `appium:xcodeOrgId` | Apple team identifier |
-| `VISTO_IOS_SIGNING_ID` | `appium:xcodeSigningId` | Signing identity name |
-| `VISTO_IOS_WDA_BUNDLE_ID` | `appium:updatedWDABundleId` | Your unique WebDriverAgent bundle identifier |
-| `VISTO_IOS_PREBUILT_WDA` | `appium:usePrebuiltWDA` | Set to any value other than empty, `0`, `false` or `no` to use an already installed WebDriverAgent |
-| `VISTO_IOS_WDA_DERIVED_DATA` | `appium:derivedDataPath` | Derived data folder of your WebDriverAgent build; a leading `~` is expanded |
+| Development team ID | `appium:xcodeOrgId` | Apple team identifier |
+| Signing identity | `appium:xcodeSigningId` | Certificate type, normally `Apple Development`; not the full certificate name. Leave empty for the automatic identity |
+| WebDriverAgent bundle ID | `appium:updatedWDABundleId` | Your unique WebDriverAgent bundle identifier |
+| Use a prebuilt WebDriverAgent | `appium:usePrebuiltWDA` | Use the WebDriverAgent you built and installed in the pre-step |
+| Derived data folder | `appium:derivedDataPath` | Derived data folder of your WebDriverAgent build; a leading `~` is expanded |
 
-Each capability is omitted when its variable is unset. `appium:xcodeOrgId` has no
-effect unless `appium:xcodeSigningId` is also set, so set the team and signing
-values together. Re-signing every seven
-days is a normal operator step: rebuild and reinstall WebDriverAgent with the
-same values, then trust the developer profile on the phone again.
+Each capability is omitted when its field is empty (or the box is unticked).
+`appium:xcodeOrgId` has no effect unless `appium:xcodeSigningId` is also set, so
+set the team and signing values together. Re-signing every seven days is a normal
+operator step: rebuild and reinstall WebDriverAgent with the same values, then
+trust the developer profile on the phone again.
+
+### After an XCUITest driver change
+
+Saving the iOS values records the installed XCUITest driver version. When a later
+release installs a different driver version, `visto doctor` and the Settings page
+say so. Rebuild and re-sign WebDriverAgent from the project path now shown (see the
+pre-step below), update the derived data folder if it changed, then save the iOS
+settings again to clear the notice.
 
 ### Trust the developer profile
 
@@ -155,17 +118,17 @@ XCUITest driver will boot a shut-down simulator or build WebDriverAgent itself i
 a session is pointed at a target that is not ready, which is why this pre-step
 exists, why the console refuses a shut-down simulator (the CLI consults no
 inventory, so a shut-down simulator id given to it will be booted by the driver)
-and why `VISTO_IOS_PREBUILT_WDA` matters. You do these first.
+and why the "Use a prebuilt WebDriverAgent" setting matters. You do these first.
 
 - Simulator: boot it (Xcode, or `xcrun simctl boot <simulator-id>`). A shut-down
   simulator is listed in the console but cannot be selected; the console hint
   says to start it from Xcode.
 - WebDriverAgent: build and install it on the target with your signing values,
-  then set `VISTO_IOS_PREBUILT_WDA` so a run uses it. Without that variable the
-  driver applies its own default, which may build WebDriverAgent while the
+  then tick "Use a prebuilt WebDriverAgent" in Settings so a run uses it. Without
+  it the driver applies its own default, which may build WebDriverAgent while the
   session starts and can exceed the startup timeout. For a phone:
-  1. Open the project the installed driver ships, found with
-     `find tools/appium/macos/node_modules -name WebDriverAgent.xcodeproj`.
+  1. Open the project the installed driver ships, at the "WebDriverAgent
+     project" path shown by `visto doctor` and the Settings page.
   2. For the `WebDriverAgentRunner` target, choose your team under Signing and
      Capabilities and replace the bundle identifier with one unique to you; use
      the same team for `WebDriverAgentLib`.
@@ -174,16 +137,16 @@ and why `VISTO_IOS_PREBUILT_WDA` matters. You do these first.
   4. On the phone, [trust the developer profile](#trust-the-developer-profile).
 
   Use that team, the signing identity Xcode chose and that bundle identifier as
-  the signing values above. Set `VISTO_IOS_WDA_DERIVED_DATA` to the build's
-  derived data folder: the `~/Library/Developer/Xcode/DerivedData/WebDriverAgent-*`
+  the signing values above. Set "Derived data folder" to the build's derived data
+  folder: the `~/Library/Developer/Xcode/DerivedData/WebDriverAgent-*`
   folder whose `Build/Products/Debug-iphoneos` holds
   `WebDriverAgentRunner-Runner.app` (Xcode, Settings, Locations shows the root).
-  Even with `VISTO_IOS_PREBUILT_WDA` the driver still runs `xcodebuild
-  test-without-building`, which installs and launches that build. Without the
-  derived data variable, Xcode picks the folder from the project path the driver
+  Even with a prebuilt WebDriverAgent the driver still runs `xcodebuild
+  test-without-building`, which installs and launches that build. Without a
+  derived data folder, Xcode picks the folder from the project path the driver
   opens, which is the symlink-resolved path. If you opened the project in Xcode
-  through a different path, for example a symlink after a non-hoisted install,
-  the driver looks in another, empty folder, and the startup fails with
+  through a different path, for example through a symbolic link, the driver looks
+  in another, empty folder, and the startup fails with
   `xcodebuild failed with code 65` because the runner app does not exist there.
   The
   [XCUITest device setup guide](https://appium.github.io/appium-xcuitest-driver/latest/getting-started/device-setup/)
@@ -195,38 +158,101 @@ and why `VISTO_IOS_PREBUILT_WDA` matters. You do these first.
 ownership marker is created leaves nothing behind: the adapter already owns a
 device, the lease directory cannot be created, or a marker for the device
 already exists and is left untouched. Once the marker exists, a startup that
-fails or is ambiguous retains it on purpose, because the remote session may
-exist; that is the normal outcome of a failed startup and needs the recovery
-below. If the session was created but is unusable, the adapter makes one bounded
-attempt to delete it and releases the marker only when that delete succeeded.
+is ambiguous retains it on purpose, because the remote session may exist. Appium
+refusing the session request with an error answer releases the marker, whether or
+not the refusal carries an operator hint: no session was created. A refusal that
+arrives after the startup deadline, or whose marker cannot be deleted, keeps the
+marker, and the error says ownership is retained. Any other failure keeps the
+marker and needs the recovery below. If the session was created but is unusable,
+the adapter makes one bounded attempt to delete it and releases the marker only
+when that delete succeeded.
+
+## iOS tunnel
+
+Appium needs a RemoteXPC tunnel to see physical iOS 17 and later devices. On macOS,
+`visto start` runs the XCUITest driver's `tunnel-creation` script for you. The
+script must run as root, so Visto asks for your administrator password once, in the
+terminal where `visto start` runs. The tunnel starts before Appium.
+
+While `visto start` runs, Visto keeps the sudo credential fresh, also after the tunnel
+has ended so that it can start it again. Any other process in the same terminal
+session can therefore run `sudo` without a password until Visto stops and the
+credential times out. If refreshing it fails, Visto prints that the
+administrator credential expired and that it may not be able to stop the tunnel.
+
+When `visto start` stops, Visto stops Appium first and then the tunnel. Ctrl+C also
+reaches the tunnel's `sudo`, which shares the terminal, so the script may end while
+Appium is still stopping. Visto stops watching the tunnel as soon as it begins to
+shut down, before stopping Appium, so this is not reported as a failure; an exit in
+the moment between Ctrl+C and that point can still be reported. To stop the
+script, Visto signals only the `sudo` process it started
+(`sudo -n kill -TERM <sudo pid>`); sudo relays the signal to the script, and no other
+process is signalled. If that fails or the script is still running after ten seconds,
+Visto prints the exact command to stop it by hand. These `sudo` and `kill` command
+lines are covered by tests with the commands replaced, not by a run against a real
+`sudo`.
+
+Before it asks for the password, Visto refuses to start the tunnel, prints why and
+keeps running, unless the Node.js binary, the script and every folder between the
+script and the Visto home belong to you or to root and are not writable by group or
+others. These checks stop other users from changing what runs as root; they do not
+stop another process running as your own user from replacing those files. If you do
+not want Visto to run anything as root, start it with `visto start --no-ios-tunnel`
+and run the tunnel yourself, or use simulators and Android only.
+
+The script only builds a tunnel for phones connected by USB cable, and only for those
+connected when it starts; if it finds none it exits, and Visto prints that no phone is
+connected by cable. You do not need to restart Visto: before each run on a physical
+iPhone, Visto starts the script again if it has ended, with the credential cached by
+the first password prompt, and waits for the tunnel of that phone. This takes at most
+half the run's startup time budget; if the tunnel is not ready by then, the run goes on
+and fails with the hint below when Appium cannot see the phone. Runs on a simulator
+(a UUID-shaped device ID) skip this step. If the credential has expired, the script
+cannot start again and Visto prints why; restart `visto start` to enter the password
+again.
+
+If a tunnel already answers on its registry port (42314), Visto uses it and does not
+start its own. If you decline the password, or the script cannot start, Visto prints
+why and keeps running: Android and simulator runs still work, and physical iOS
+devices are unavailable until Visto is restarted with the password.
 
 ## Check readiness
 
 ```sh
-python -m visto.cli doctor --platform ios --device <udid>
+visto doctor
 ```
 
-`doctor` reads the local toolchain and environment only. It contacts neither a
-device nor the provider. For iOS it adds `xcrun_present`,
+Doctor reads the local toolchain and settings only. It contacts neither an iOS
+device nor the provider. On macOS it adds the `xcrun simctl` and `xcrun devicectl`
+checks, whether the three signing values are set (values are never shown), the
+WebDriverAgent project path and the driver-change notice. Signing and device
+tooling are needed for a phone only, so a simulator-only setup can ignore them.
+
+`visto doctor --json --platform ios` adds `xcrun_present`,
 `simulator_tooling_present`, `device_tooling_present` and
-`wda_signing_configured` (all three signing variables set; values are never
-shown). Exit code 0 needs the API key, a device identifier, `xcrun` and the
-simulator tooling. Device tooling and signing are reported but not required, so
-a simulator-only setup exits 0; check those two fields yourself before using a
-phone. Exit code 2 means one of the required items is missing.
+`wda_signing_configured` to the JSON output. It exits 2 when any check fails or
+`xcrun` or the simulator tooling is missing; device tooling and signing are
+reported but do not change the exit code.
 
 The console and `GET /readiness` expose `platforms`. It lists which device
-sources are configured on the server, not what the machine can drive. On
-Windows or Linux it still names iOS; the device list then carries a note that
-`xcrun` was not found.
+sources are configured on the server, not what the machine can drive.
+
+Refreshing the device list also tries to bring back a paired phone that CoreDevice
+reports as not connected. For each such phone (at most four), it makes one bounded,
+read-only `xcrun devicectl device info details` call, which may connect to the phone,
+then lists the devices again. No Xcode build is needed. If the phone stays unavailable,
+the call changed nothing and the list says so. This relies on the `devicectl` help text,
+which says the command may connect to the device; it has not been checked against a
+phone in the disconnected state. When a paired phone is switched off or out of reach,
+Refresh can take up to about ten seconds longer.
 
 ## Start a run
 
 Pick the device in the console list (iOS entries show their platform), or pass
-the platform on the CLI:
+the platform on the CLI (`--platform ios` exists only on macOS):
 
 ```sh
-python -m visto.cli run --platform ios --device <udid> --goal "..."
+visto run --platform ios --device <udid> --goal "..."
 ```
 
 `POST /runs` takes `"platform": "ios"`. There is no separate
@@ -250,12 +276,16 @@ retained-lease recovery below after such a mistake. See
 ## When a run does not start
 
 A failed session start ends the run as an infrastructure failure at
-`device.acquire` with a generic detail, and retains the device lease (see the
-recovery below). The cause is not stored with the run. Look in two places:
+`device.acquire`. An Appium refusal releases the device lease; any other failed start
+retains it (see the recovery below). When Appium reports `Unknown device or simulator
+UDID`, the detail tells you to connect the phone with a USB cable, unlock it and
+start the run again. When it reports `Unable to launch WebDriverAgent`, the detail
+points to the signing values and to the build result below; other causes keep a
+generic detail. For those other causes, look in two places:
 
-- The Appium server output. With the pinned `--log-level warn` it shows
-  `Unable to launch WebDriverAgent` and the `xcodebuild` exit code, not the
-  reason.
+- The Appium log, `~/.visto/logs/appium.log`. At Visto's `--log-level warn` it
+  shows `Unable to launch WebDriverAgent` and the `xcodebuild` exit code, not the
+  reason. The log is private: it may contain entered text.
 - The `xcodebuild` test result in the derived data folder the driver used,
   `<derived-data>/Logs/Test/Test-WebDriverAgentRunner-<timestamp>.xcresult`.
   Print its errors with
@@ -264,27 +294,38 @@ recovery below). The cause is not stored with the run. Look in two places:
 
 | Error in the test result | Cause and fix |
 |---|---|
-| "Failed to install the app on the device" … "The file doesn't exist" | No runner build in that folder: set `VISTO_IOS_WDA_DERIVED_DATA` to the folder that holds it, restart the backend |
+| "Failed to install the app on the device" … "The file doesn't exist" | No runner build in that folder: set "Derived data folder" in Settings to the folder that holds it and save |
+| "has conflicting provisioning settings" … "code signing identity … has been manually specified" | Signing identity holds the full certificate name: set it to `Apple Development` in Settings and save. `security find-identity -v -p codesigning` lists your certificates |
 | "The Developer App Certificate is not trusted" | [Trust the developer profile](#trust-the-developer-profile) on the phone |
 
 A new `WebDriverAgent-*` folder that appears under derived data with no
 `Build/Products` is the trace of the first case.
 
+When `visto start` stops, the WebDriverAgent it started can stay open on the phone
+without its test session. Appium would reuse it at the next run, and it then answers
+"Not authorized for performing UI testing actions". Visto recognises that answer,
+deletes the session and starts it once more with `appium:useNewWDA`, which makes the
+driver uninstall that WebDriverAgent and build and start a new one; this adds roughly
+the time of a first start to that run. If the new one fails the same way, the run
+ends with a detail that asks you to close the WebDriverAgent app on the phone and
+check that UI Automation is enabled in the phone's Developer settings.
+
 ## Recovery of a retained lease
 
-An uncertain mutation, an unusable session, a failed startup or a failed cleanup
-retains the ownership marker, as on Android. A retained lease needs manual
+An uncertain mutation, an unusable session, an ambiguous startup or a failed cleanup
+retains the ownership marker, as on Android. An explicit Appium refusal does not. A retained lease needs manual
 recovery:
 
-1. Stop the runner and Appium, and confirm no WebDriverAgent session is still
+1. Stop the runner (which stops the Appium it started), and confirm no WebDriverAgent session is still
    active on the target. Appium refuses `GET /appium/sessions` unless its
    `session_discovery` feature is enabled; a session start that failed before
    WebDriverAgent launched, as in the table above, created no session.
-2. Inspect the marker in `.work/device-leases` (device, run, PID) and the run's
+2. Inspect the marker in `~/.visto/data/device-leases` (device, run, PID;
+   `visto doctor` lists it) and the run's
    stored intent and receipt. Do not infer a verdict from a lost transport.
 3. Delete only that marker once the target is idle. Its name is the SHA-256 of
    the device identifier: `printf %s '<udid>' | shasum -a 256`, plus `.lease`.
-4. Restart Appium and start a new run from a fresh observation.
+4. Start Visto again and start a new run from a fresh observation.
 
 Screenshots may contain private data and Appium logs may contain entered text;
 see [Android setup](android-setup.md#exclusive-ownership-and-crash-recovery)

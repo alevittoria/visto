@@ -5,11 +5,10 @@ any size help: bug reports, docs, tests, new adapters, design feedback.
 
 ## Where help is most wanted
 
-- **iOS support**: a device adapter based on Appium/XCUITest that implements
-  the same device port as the Android adapter (`backend/src/visto/adapters/android/`).
-  Some commands (for example `Back`) have no direct iOS equivalent; proposals on
-  how to model platform differences are welcome. Please open an issue to discuss
-  the design before writing a large PR.
+- **iOS verification**: the iOS adapter (`backend/src/visto/adapters/ios/`) has
+  had local checks only. Runs on simulators and iPhones, and fixes for what they
+  reveal, are the most wanted contribution. Please open an issue to discuss a
+  design change before writing a large PR.
 - **AI providers**: adapters for multimodal models beyond OpenAI.
 - **Evaluation**: labelled scenarios on fictional sample apps that measure how
   well a model judges outcomes (see `docs/evaluation/`).
@@ -36,8 +35,20 @@ declined, so ask first if in doubt:
 
 ## Development setup
 
-Install the pinned tools and dependencies as described in
-[docs/local-development.md](docs/local-development.md), then run the checks:
+Clone the repository, install the locked dependencies and run Visto from the
+checkout with its own home, as described in
+[installation, contributing](docs/local-development.md#contributing):
+
+```sh
+uv sync --project backend --locked --all-groups
+cd frontend
+pnpm install --frozen-lockfile
+cd ..
+uv run --project backend visto start --home .work/home --no-browser
+# second terminal: cd frontend && pnpm dev, then open http://127.0.0.1:5173
+```
+
+Then run the checks:
 
 ```sh
 python scripts/verify.py

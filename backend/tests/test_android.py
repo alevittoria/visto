@@ -447,5 +447,8 @@ def test_appium_without_the_android_sdk_tells_the_operator_what_to_fix(tmp_path)
         message = str(error.value)
         assert message.startswith("android: ") and "ANDROID_HOME" in message
         assert "unknown server-side error" not in message
+        # The fix is the managed Appium, not exporting variables by hand.
+        assert "visto start" in message and "visto run" in message
+        assert "export" not in message
 
     asyncio.run(scenario())

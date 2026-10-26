@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiRequest, deviceLabel, parseDevices } from '../console.ts';
-import type { AttachedDevice, DeviceInventory } from '../console.ts';
+import { apiRequest, deviceLabel, emptyDeviceHint, parseDevices } from '../console.ts';
+import type { AttachedDevice, DeviceInventory, Platform } from '../console.ts';
 
 interface Props {
   value: string;
@@ -8,11 +8,13 @@ interface Props {
   onLoaded: (devices: AttachedDevice[]) => void;
   invalid: boolean;
   describedBy?: string;
+  /** Platforms the server lists devices for (readiness). */
+  platforms: Platform[];
 }
 
 type State = { loading: boolean; inventory: DeviceInventory | null; error: string | null };
 
-export function DeviceSelect({ value, onSelect, onLoaded, invalid, describedBy }: Props) {
+export function DeviceSelect({ value, onSelect, onLoaded, invalid, describedBy, platforms }: Props) {
   const [state, setState] = useState<State>({ loading: true, inventory: null, error: null });
   const active = useRef<AbortController | null>(null);
   const loaded = useRef(onLoaded);
@@ -62,7 +64,7 @@ export function DeviceSelect({ value, onSelect, onLoaded, invalid, describedBy }
       </div>
       <p id="device-status" className={state.error ? 'error-text' : 'help'} aria-live="polite">
         {state.error ?? (devices.length === 0 && !state.loading
-          ? 'Connect an Android phone with USB debugging enabled, or boot an iOS simulator from Xcode, then press Refresh.'
+          ? emptyDeviceHint(platforms)
           : `${selectable.length} ready of ${devices.length} connected.`)}
       </p>
       {state.inventory?.notes.map((note) => <p key={note} className="help">{note}</p>)}

@@ -132,13 +132,14 @@ resume. The loop acquires ownership and freshly observes before acting.
 `application/loop.py` implements one bounded conversation with fresh capture,
 durable intent, technical receipt, AI assessment and act/wait/ask/conclude.
 Context keeps original goals, answers, recent decisions and pre/post evidence.
-`runner.py` wires concrete adapters; `cli.py` provides run/doctor/inspect.
+`runner.py` wires concrete adapters; `cli.py` provides the `visto` command
+(setup, start, doctor, settings, run, inspect).
 Observe-only mode removes mutation capabilities without UI predicates. Question
 resume is same-process; crash auto-resume is refused.
 
 Appium uses serial-bound sessions, native PNG geometry/rotation, cooperative
-O_EXCL owner markers and uncertain-work quarantine. Processes started from the
-repository root share `.work/device-leases`. Uncertain remote work or cleanup
+O_EXCL owner markers and uncertain-work quarantine. Processes using the same
+Visto home share `<home>/data/device-leases`. Uncertain remote work or cleanup
 retains ownership for explicit manual reconciliation.
 
 The provider receives a reconstructed bounded local conversation including the

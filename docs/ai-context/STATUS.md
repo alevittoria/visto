@@ -18,15 +18,22 @@ dated progress notes here.
 - **Android adapter**: serial-bound Appium/UiAutomator2 sessions, native PNG and
   rotation validation, typed commands (`tap`, `long_press`, `swipe`, `type_text`
   as one whole-value set, `back`, `home`, `enter`) and fail-closed
-  repository-scoped device leases. Device inventory via a fixed, bounded
+  device leases in the Visto home. Device inventory via a fixed, bounded
   `adb devices -l`; the backend starts the adb server at startup.
+- **iOS tunnel**: on macOS `visto start` runs the XCUITest driver's tunnel script as
+  root through sudo (one password prompt, credential refreshed while running,
+  ownership and permission checks before escalating, `--no-ios-tunnel` to opt out),
+  prints a notice when the script ends on its own, starts it again before a run on a
+  physical iPhone when it has ended, and stops it after Appium. The tunnel only covers
+  phones connected by USB cable. Refreshing the device list also
+  tries to reconnect paired phones that CoreDevice reports as not connected.
 - **iOS adapter**: Appium/XCUITest sessions bound to a simulator or an attached
   device, the same seven typed commands, and `back` as a dispatch-only swipe from
   the left screen edge that may not navigate — the AI judges the effect from the
   next observation and adapts. Screenshot pixels are converted to display points
   through one authority, with the ratio derived and validated per session and an
   inconsistent or non-uniform ratio refusing the device rather than guessing.
-  WebDriverAgent signing values come from the process environment and are never
+  WebDriverAgent signing values come from the settings store and are never
   committed. Device inventory from two independent fixed, bounded, read-only
   Xcode commands, one for simulators and one for attached devices, so a failure
   of either still lists the other.
@@ -42,26 +49,42 @@ dated progress notes here.
   to the composition root, which is the one place a platform picks its adapter;
   the stored run records the choice through its existing adapter and instruction
   version strings, and neither domain nor application knows about platforms.
-- **Interfaces**: headless CLI (`run`, `doctor`, `inspect`, observe-only mode,
-  `--platform`); local FastAPI execution API; React console (device picker,
-  model choice, run
+- **Interfaces**: `visto` CLI (`setup`, `start`, `doctor`, `settings`, `run`,
+  `inspect`, observe-only mode, `--platform` with `ios` offered only on macOS);
+  local FastAPI execution and settings API; React console (settings page with a
+  write-only provider key, device picker, model choice, run
   view with action overlay, controls, questions, run history and deletion, "run
   again", statistics with daily-priced cost estimates, dictation); JSON/HTML
   report export. One device picker lists both platforms with the platform
   visible, selectability follows each platform's own state vocabulary, and a run
   cannot be submitted until a device list has confirmed the device's platform.
-- **Environment**: Appium, the backend and the console run as local processes.
-  Windows and Linux drive Android with the pinned `tools/appium` package; macOS
-  drives both platforms in one picker with `tools/appium/macos`, which adds the
-  XCUITest driver. Root `.env` for credentials (process environment takes
-  precedence). See [installation](../local-development.md) and
-  [iOS setup](../ios-setup.md).
+- **Installation**: a wheel attached to GitHub Releases (built by a tag-triggered
+  workflow, with the compiled console and the Appium lockfiles inside) is
+  installed with `uv tool install`. `visto setup` downloads pinned,
+  checksum-verified portable Node, JDK and Android platform-tools/build-tools
+  into the Visto home (`~/.visto`) after the Android SDK license is accepted,
+  then installs Appium from the shipped lockfile (UiAutomator2 everywhere, plus
+  XCUITest on macOS). No system environment variable or `PATH` is changed.
+  `visto start` runs Appium as a child process and the backend, which also
+  serves the console, from one terminal. Settings (provider key in an
+  owner-only secrets file, iOS signing values, price refresh) are read at use;
+  no environment variable or `.env` file configures them. The run
+  database has numbered migrations with a backup before each, and a process
+  registry keeps setup and migrations away from running Visto processes. See
+  [installation](../local-development.md) and [iOS setup](../ios-setup.md).
 
 ## Verification state
 
 - Local checks (`python scripts/verify.py`) cover backend tests, Ruff, build,
   frontend type-check/tests/build and companion integrity. They exercise
   software boundaries, not model judgement quality.
+- The installation path (toolchain download and extraction, Appium install,
+  `visto start` supervision, settings store and API, migrations, release
+  workflow) has local checks, with fake downloads, processes and servers. The
+  release workflow has run on GitHub for a version tag and attached a wheel that
+  passes the wheel check; no clean host has been installed from a released wheel.
+  The case-insensitive-filesystem archive guard is simulated, not observed on
+  macOS.
 - The iOS work has local checks only. Every iOS behaviour is verified against a
   fake HTTP wire: no simulator, no device, no Appium server and no provider has
   been contacted. The XCUITest routes and the Xcode inventory commands were
@@ -76,7 +99,7 @@ dated progress notes here.
   console, delayed UI, observe-only mode, CLI path, Appium/provider failure
   handling (expected: infrastructure failure, not a verdict).
 - iOS on a phone: with the prebuilt WebDriverAgent found through
-  `VISTO_IOS_WDA_DERIVED_DATA` and the developer profile trusted, a session
+  the derived-data setting and the developer profile trusted, a session
   started and a run executed actions. Its taps landed short of their targets,
   because the provider downscaled the screenshot and the model answered in the
   downscaled image's pixels; the adapter now sends screenshots already within
@@ -93,11 +116,29 @@ dated progress notes here.
 - Storage errors are logged without their original cause.
 - An answer racing the run deadline returns 503.
 - `cleanup_failed` is not durable.
-- A failed session start leaves a device lease that needs manual cleanup. On iOS
-  a session created but found unusable is deleted once and the lease released
-  when that delete succeeds; otherwise the lease is retained for manual recovery.
-- A failed session start is stored with a generic detail; the cause (for example
-  an `xcodebuild` error) is only in the Appium server log.
+- A failed session start whose outcome is uncertain leaves a device lease that needs
+  manual cleanup. An explicit Appium refusal of the session request releases it, and
+  on iOS a session created but found unusable is deleted once and the lease released
+  when that delete succeeds.
+- A failed session start is stored with a generic detail unless the adapter
+  recognises the cause (iOS: phone not visible to Appium, WebDriverAgent launch
+  failure); other causes, such as the exact `xcodebuild` error, are only in the
+  Appium server log or the build result.
+- The iOS tunnel, its sudo handling and the refresh reconnect have local checks
+  only. Stopping the tunnel signals the sudo process Visto started and relies on sudo
+  relaying the signal to the script (sudo was seen running a second sudo before node);
+  that relay and `devicectl device info details` on a disconnected phone are
+  unverified. The ownership checks cannot stop another process of the same user
+  from replacing the files root runs.
+- The tunnel script exits when no phone is on USB at start; Visto starts it again
+  before the next run on a physical iPhone and waits for that phone's tunnel through
+  the driver's registry. This relaunch has local checks only, and depends on the sudo
+  credential cached at `visto start` still being valid. Simulators are told apart by
+  their UUID-shaped device ID. `visto run` does not start the tunnel.
+- After `visto start` restarts, the WebDriverAgent left on the phone is reused and
+  refuses UI testing; the adapter deletes that session and retries once with
+  `appium:useNewWDA`. The retry has local checks only; the stale-runner answers it
+  recognises come from a real session.
 - Nothing compares a requested platform with the attached device: a mismatch
   surfaces only as a session that Appium cannot start.
 - No DOM tests for React components.
@@ -118,5 +159,6 @@ dated progress notes here.
    [first device test](../first-device-test.md).
 6. Re-check Android live with the backend on macOS, since that setup serves
    both platforms from one picker.
-7. Live check of the installation guide on a clean Windows or Linux host: Appium
-   from `tools/appium` with a local Android SDK and JDK, followed step by step.
+7. Live installation checks from a released wheel on a clean Windows host and a
+   clean Mac (`visto setup`, `visto start`, Settings page, `visto doctor`, a run),
+   then an upgrade from one release to the next with data and settings kept.
