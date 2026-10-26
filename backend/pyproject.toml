@@ -1,6 +1,6 @@
 [project]
 name = "visto"
-version = "0.1.0"
+version = "0.2.0"
 description = "Mobile app testing with AI-owned navigation and semantic assessment"
 license = "MIT"
 requires-python = ">=3.12,<3.13"
