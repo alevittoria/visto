@@ -7,13 +7,14 @@ needs a Mac with Xcode, with the backend running on that Mac.
 ## Evidence
 
 Local checks cover iOS with unit tests against a faked Appium wire and faked
-`xcrun` output. On a phone, with a prebuilt WebDriverAgent found through an
-explicit derived data folder and the developer profile trusted, a session
-started and a run executed actions. A completed run, the simulator path, the
-`connected` state mapping and rotation on hardware have not been observed. The
-Appium and Xcode commands below follow the vendors' documentation (see
-[references](references.md#ios)); treat their exact output as unconfirmed until
-you run them. A run on iOS is not a validated acceptance.
+`xcrun` output. On a physical iPhone connected by USB cable, once the setup on
+this page is complete (prebuilt WebDriverAgent signed, installed and found
+through an explicit derived data folder, developer profile trusted, signing
+values saved), runs complete end to end. The simulator path, the `connected`
+state mapping and rotation on hardware have not been observed. The Appium and
+Xcode commands below follow the vendors' documentation (see
+[references](references.md#ios)). A completed run is not a labelled evaluation of
+judgement quality.
 
 ## Where iOS runs
 

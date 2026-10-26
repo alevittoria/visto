@@ -12,20 +12,21 @@ No selectors. No page objects. No brittle scripts that break when a button moves
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Status: work in progress](https://img.shields.io/badge/status-work%20in%20progress-orange.svg)
 ![Android: supported](https://img.shields.io/badge/Android-supported-2fbf71.svg)
-![iOS: implemented, unverified](https://img.shields.io/badge/iOS-implemented%2C%20unverified-lightgrey.svg)
+![iOS: supported](https://img.shields.io/badge/iOS-supported-2fbf71.svg)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-8f7cff.svg)](CONTRIBUTING.md)
 
-<img src="docs/assets/visto-demo.svg" alt="Animated example: given the goal 'create a note titled Groceries and check that it shows up in the list', the AI observes the screen, taps the add button, types the title, saves, judges each effect and concludes PASSED citing its observations" width="900">
+<img src="docs/assets/visto-demo.gif" alt="Screen recording of the Visto web console: the goal 'In the Calculator app, compute 12 × 7' with the expected result 'The display shows 84' is typed and the run started; the console shows each device screenshot and the AI's reasoning as it taps 1, 2, ×, 7 and =, then the AI verdict 'passed' citing the screenshot that shows 84" width="900">
 
-<sub>Illustration of a run against a fictional app. The flow and outcome format match what Visto records.</sub>
+<sub>A real run on an Android phone, recorded from the web console. The waiting between steps is sped up 4×.</sub>
 
 </div>
 
 > [!WARNING]
-> **Visto is a work in progress.** Android works end to end today: CLI, web
-> console. **iOS is implemented but has only had local checks** (see
-> [platform support](#platform-support)). APIs, prompts and storage
-> formats may still change. Early testers and contributors are very welcome.
+> **Visto is a work in progress.** Android and iOS work end to end today, from
+> the CLI and the web console. **iOS needs more setup than Android** (a Mac with
+> Xcode and a signed WebDriverAgent; see [Quick start (iOS)](#quick-start-ios)).
+> APIs, prompts and storage formats may still change. Early testers and
+> contributors are very welcome.
 
 ## Why Visto?
 
@@ -81,12 +82,11 @@ flowchart LR
 | Platform | Status | Device backend |
 |---|---|---|
 | **Android** | ✅ Working (8.0 / API 26+, USB or wireless debugging) | Appium + UiAutomator2, adb |
-| **iOS** | 🚧 Implemented, local checks only: nothing has been run against a simulator or a device yet. macOS only; see [iOS setup](docs/ios-setup.md) | Appium + XCUITest, WebDriverAgent |
+| **iOS** | ✅ Working on a real iPhone by USB cable (macOS with Xcode only). One-time signing setup required: see [Quick start (iOS)](#quick-start-ios). Simulators are supported but not yet exercised live | Appium + XCUITest, WebDriverAgent |
 
 The core is platform-agnostic by design. The domain and application layers know
 about *observations* and *commands*, not about Android. The iOS adapter is a second
-device adapter behind the same port; the AI loop stays the same. The physical-device
-path is code-complete but unobserved.
+device adapter behind the same port; the AI loop stays the same.
 
 ## Quick start (Android)
 
@@ -119,9 +119,80 @@ work.
 - Full installation guide, proxies, upgrade and uninstall:
   [installation](docs/local-development.md)
 - Device preparation and wireless debugging: [Android setup](docs/android-setup.md)
-- iOS simulators and iPhones (macOS only): [iOS setup](docs/ios-setup.md)
+- iOS simulators and iPhones (macOS only): [Quick start (iOS)](#quick-start-ios)
 - First run from the terminal CLI: [first device tests](docs/first-device-test.md)
 - Web console guide: [web console](docs/web-console.md)
+
+## Quick start (iOS)
+
+iOS takes more preparation than Android, because Apple only lets a phone be driven
+through **WebDriverAgent**, a small test app that you sign with your own Apple
+account and install on the phone. Visto cannot do that step for you. Plan about
+half an hour the first time; afterwards a run starts like on Android.
+
+You need:
+
+- a **Mac** with **Xcode** installed and opened once (it accepts its license and
+  installs its components);
+- an **Apple ID** added in Xcode (Settings › Accounts); a free personal team is
+  enough;
+- for a physical phone, a **USB cable**: the phone is reached only by cable, not
+  over Wi-Fi;
+- Visto installed as in the [Android quick start](#quick-start-android). On a Mac,
+  the first `visto start` also installs the iOS driver.
+
+A **simulator** needs no signing: boot it from Xcode (or
+`xcrun simctl boot <simulator-id>`), then pick it in the console. Steps 1–4 below
+are for a **physical iPhone**.
+
+**1. Prepare the phone (once).** Connect it by cable, unlock it and tap *Trust*
+when it asks to trust the Mac. Turn on **Developer Mode** (Settings › Privacy &
+Security › Developer Mode; the phone restarts and asks you to confirm) and
+**UI Automation** (Settings › Developer).
+
+**2. Build and install WebDriverAgent (once, then again when the signature expires).**
+
+1. Run `visto doctor` (or open the console's Settings page) and note the
+   **WebDriverAgent project** path. Open that `.xcodeproj` in Xcode.
+2. Select the `WebDriverAgentRunner` target › *Signing & Capabilities*: choose your
+   team and change the bundle identifier to one unique to you, for example
+   `com.<yourname>.WebDriverAgentRunner`. Choose the same team for
+   `WebDriverAgentLib`.
+3. Pick the `WebDriverAgentRunner` scheme and your phone as destination, then run
+   **Product › Test**. Stop it once the runner app is installed on the phone.
+4. On the phone, trust your developer certificate: Settings › General › VPN &
+   Device Management › *Apple Development: …* › **Trust**.
+
+**3. Tell Visto how WebDriverAgent was signed.** In the console's **Settings ›
+iOS signing** (shown only on macOS), fill in and save:
+
+| Field | Value |
+|---|---|
+| Development team ID | your team ID (Xcode › Settings › Accounts) |
+| Signing identity | `Apple Development` (not the full certificate name) |
+| WebDriverAgent bundle ID | the bundle identifier you chose in step 2 |
+| Use a prebuilt WebDriverAgent | ticked |
+| Derived data folder | the `~/Library/Developer/Xcode/DerivedData/WebDriverAgent-…` folder of that build |
+
+**4. Start Visto and run.** `visto start` asks for your Mac **administrator
+password once**: on macOS it opens the tunnel through which Appium reaches iPhones
+with iOS 17 or later, and that needs root. (`--no-ios-tunnel` skips it, but then only
+simulators and Android work.) Before every run, connect the phone by cable, unlock
+it and open the app under test in its starting state. Visto neither installs nor
+launches apps. Then pick the iPhone in the console and start the run. Do not rotate
+or touch the phone while the run is going.
+
+> [!NOTE]
+> With a **free** Apple team the signature **expires after seven days**. When runs
+> stop starting, repeat step 2 (the same values work) and trust the profile on the
+> phone again. Repeat step 2 as well after a Visto release that updates the iOS
+> driver: `visto doctor` and the Settings page say when that is needed.
+
+If a run ends with `xcodebuild failed with code 65` or `Unable to launch
+WebDriverAgent`, it is almost always the signing setup: an untrusted profile, a
+wrong derived data folder or a full certificate name as signing identity. The
+[iOS setup guide](docs/ios-setup.md#when-a-run-does-not-start) maps each error to
+its fix and covers the tunnel, simulators and recovery in detail.
 
 > [!IMPORTANT]
 > Screenshots, goals and the AI's reasoning are sent to the configured AI provider
@@ -163,8 +234,8 @@ More: [architecture](docs/ai-context/03-architecture.md) ·
 - [x] Android device adapter (Appium/UiAutomator2)
 - [x] Terminal CLI, web console, HTML/JSON reports
 - [x] Voice dictation, run statistics and cost estimates
-- [x] iOS device adapter (Appium/XCUITest), implemented with local checks only
-- [ ] **Verify iOS** against real simulators and devices
+- [x] iOS device adapter (Appium/XCUITest)
+- [x] iOS verified against real devices
 - [ ] Additional AI providers (only OpenAI is wired today)
 - [ ] Labelled evaluation suite to measure judgement quality across models
 - [ ] CI-friendly headless mode and exit codes for pipelines
@@ -173,10 +244,8 @@ More: [architecture](docs/ai-context/03-architecture.md) ·
 
 ## Contributing
 
-**Contributions are very welcome**, and verifying iOS on simulators and devices is the most wanted. Other good
-first areas: new AI providers, console UX, documentation, real-world test
-scenarios built on fictional sample apps, and an actual screen recording for this
-README.
+**Contributions are very welcome.** Good first areas: new AI providers, console UX, documentation, and real-world test
+scenarios built on fictional sample apps.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) to set up the project, run the checks
 (`python scripts/verify.py`) and open a pull request. Bug reports and ideas go in

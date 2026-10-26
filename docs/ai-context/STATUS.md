@@ -85,11 +85,12 @@ dated progress notes here.
   passes the wheel check; no clean host has been installed from a released wheel.
   The case-insensitive-filesystem archive guard is simulated, not observed on
   macOS.
-- The iOS work has local checks only. Every iOS behaviour is verified against a
-  fake HTTP wire: no simulator, no device, no Appium server and no provider has
-  been contacted. The XCUITest routes and the Xcode inventory commands were
-  checked against driver documentation, driver sources and the installed
-  toolchain's own output, never a live session; `docs/references.md` records which
+- iOS has local checks against a fake HTTP wire for every adapter behaviour, and
+  works on a physical iPhone once the setup is complete (WebDriverAgent built,
+  signed and trusted, signing values saved, phone connected by USB cable): runs
+  have been carried out end to end there. The XCUITest routes and the Xcode
+  inventory commands were checked against driver documentation, driver sources
+  and the installed toolchain's own output; `docs/references.md` records which
   claims rest on which evidence.
 - Live smoke runs on a real phone have passed for positive and negative cases,
   pause/resume/cancel through the API, and the `long_press`/`enter` commands.
@@ -98,16 +99,8 @@ dated progress notes here.
 - Not yet exercised live: console Cancel button, pending question/answer from the
   console, delayed UI, observe-only mode, CLI path, Appium/provider failure
   handling (expected: infrastructure failure, not a verdict).
-- iOS on a phone: with the prebuilt WebDriverAgent found through
-  the derived-data setting and the developer profile trusted, a session
-  started and a run executed actions. Its taps landed short of their targets,
-  because the provider downscaled the screenshot and the model answered in the
-  downscaled image's pixels; the adapter now sends screenshots already within
-  the provider's limits and maps coordinates back. That fix has local checks
-  only and has not been re-run on a device; it also changes the image sent for
-  Android. The simulator path, the `connected` device mapping, rotation on
-  hardware and the acceptance scenario remain unexercised. Android on macOS has not
-  been re-checked either, and that setup is what the single picker needs.
+- iOS not yet exercised live: the simulator path, the `connected` device mapping,
+  rotation on hardware and the labelled acceptance scenario.
 
 ## Known issues
 
@@ -153,12 +146,9 @@ dated progress notes here.
 4. Repeated labelled evaluation following the
    [evaluation protocol](../evaluation/protocol.md); agree numeric thresholds
    before running it.
-5. Install the pinned macOS Appium stack, then run the iOS live checks: the
-   simulator path first, then the attached device, then the acceptance scenario on
-   both, following [iOS setup](../ios-setup.md) and
-   [first device test](../first-device-test.md).
-6. Re-check Android live with the backend on macOS, since that setup serves
-   both platforms from one picker.
-7. Live installation checks from a released wheel on a clean Windows host and a
+5. Run the remaining iOS live checks: the simulator path, then the acceptance
+   scenario on the simulator and the attached phone, following
+   [iOS setup](../ios-setup.md) and [first device test](../first-device-test.md).
+6. Live installation checks from a released wheel on a clean Windows host and a
    clean Mac (`visto setup`, `visto start`, Settings page, `visto doctor`, a run),
    then an upgrade from one release to the next with data and settings kept.
