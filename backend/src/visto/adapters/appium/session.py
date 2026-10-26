@@ -27,6 +27,14 @@ from visto.domain.models import (
 from .wire import CommandError, Wire
 
 
+class AppiumRefusal(PortError):
+    """Appium answered a request with a W3C error, so the command had no effect."""
+
+
+class RefusedWithHint(AppiumRefusal, OperatorActionRequired):
+    """A refusal the adapter recognises: it carries the fixed operator hint."""
+
+
 class NoFocusedField(Exception):
     """TypeText was requested while no input element had focus."""
 
@@ -68,6 +76,8 @@ class AppiumSession:
         self._capture: CapturedImage | None = None
         self._pending: asyncio.Task | None = None
         self._active = threading.Event()
+        # Orders a worker's "nobody gave up yet" check against the caller giving up.
+        self._settle = threading.Lock()
         self._used_sources: set[str] = set()
         self._uncertain = threading.Event()
 
@@ -115,7 +125,8 @@ class AppiumSession:
         try:
             return await asyncio.wait_for(asyncio.shield(task), timeout_ms / 1000)
         except (TimeoutError, asyncio.CancelledError):
-            stop.set()
+            with self._settle:
+                stop.set()
             raise
         except PortError:
             raise
@@ -137,8 +148,8 @@ class AppiumSession:
         except CommandError as error:
             hint = self.diagnose(error.message)
             if hint:
-                raise OperatorActionRequired(f"{self._component}: {hint}") from None
-            raise PortError(f"{self._component}: Appium request failed") from None
+                raise RefusedWithHint(f"{self._component}: {hint}") from None
+            raise AppiumRefusal(f"{self._component}: Appium request failed") from None
         except Exception:
             raise PortError(f"{self._component}: Appium request failed") from None
 
@@ -174,7 +185,10 @@ class AppiumSession:
         if not run_id.strip() or not device_id.strip():
             raise ValueError("Run and device identifiers are required")
 
+        released = False
+
         def acquire(deadline, stop):
+            nonlocal released
             if self._marker is not None:
                 raise PortError(f"{self._component}: adapter already owns or quarantines a device")
             # Before the marker: a platform hook that refuses the target leaves no
@@ -198,9 +212,30 @@ class AppiumSession:
                 )
                 stream.flush()
                 os.fsync(stream.fileno())
-            result = self._request(
-                "POST", "/session", {"capabilities": {"alwaysMatch": capabilities}}, deadline, stop
-            )
+            try:
+                result = self._request(
+                    "POST",
+                    "/session",
+                    {"capabilities": {"alwaysMatch": capabilities}},
+                    deadline,
+                    stop,
+                )
+            except AppiumRefusal:
+                # A W3C error answer means Appium created no session, so nothing remote
+                # can outlive the marker. Any other failure keeps it, and so does a
+                # refusal that arrives after the caller was told ownership is retained.
+                with self._settle:
+                    if stop.is_set():
+                        raise
+                    try:
+                        marker.unlink()
+                    except OSError:
+                        raise PortError(
+                            f"{self._component}: session refused; ownership retained"
+                        ) from None
+                    self._marker = self._token = None
+                    released = True
+                raise
             if not isinstance(result, dict) or not isinstance(result.get("sessionId"), str):
                 raise PortError(
                     f"{self._component}: malformed session response; ownership retained"
@@ -211,6 +246,12 @@ class AppiumSession:
         try:
             return await self._run(acquire, timeout_ms)
         except TimeoutError:
+            # `_run` gave up under `_settle`: `released` can no longer change.
+            if released:
+                raise PortError(
+                    f"{self._component}: session startup timed out after Appium refused"
+                    " the session; ownership released"
+                ) from None
             raise PortError(
                 f"{self._component}: session startup timed out; ownership retained"
             ) from None

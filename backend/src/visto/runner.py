@@ -1,5 +1,6 @@
 """Composition for the opt-in headless runner; construction never contacts a device."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -33,6 +34,10 @@ class RunnerSettings:
     capabilities: tuple[CommandKind, ...] = tuple(CommandKind)
     platform: Platform = Platform.ANDROID
     ios_signing: IOSSigning = IOSSigning()
+    # Before an iOS session: brings the tunnel back for a phone (see XCUITestDevice).
+    ios_prepare: Callable[[str, float], object] | None = field(
+        default=None, compare=False, repr=False
+    )
 
     def __post_init__(self):
         if not self.device_id.strip() or not self.model.strip():
@@ -56,7 +61,11 @@ def build_runtime(settings: RunnerSettings, api_key: str, control: MutableRunCon
     root = settings.data_directory.resolve()
     artifacts = LocalArtifactStore(root / "artifacts")
     store = SQLiteRunStore(root / "runs.sqlite3", artifacts)
-    options = {"signing": settings.ios_signing} if settings.platform is Platform.IOS else {}
+    options = (
+        {"signing": settings.ios_signing, "prepare": settings.ios_prepare}
+        if settings.platform is Platform.IOS
+        else {}
+    )
     device = DEVICE_ADAPTERS[settings.platform](
         settings.appium_url,
         settings.lease_directory.resolve(),

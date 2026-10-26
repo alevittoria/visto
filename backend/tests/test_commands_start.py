@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from visto.adapters.storage.migrations import CURRENT_VERSION, schema_version
-from visto.commands import appium_process
+from visto.commands import appium_process, ios_tunnel
 from visto.commands.appium_process import AppiumProcess, PortBusy
 from visto.commands.start import run_start
 from visto.home import VistoHome
@@ -471,3 +471,187 @@ def test_uvicorn_serve_announces_readiness_and_honours_stop():
     announced = []
     uvicorn_serve(FastAPI(), 0, ready=lambda: announced.append(True), stop=lambda: True)
     assert announced == [True]
+
+
+class FakeSudo:
+    def __init__(self, authenticated=True):
+        self.authenticated = authenticated
+        self.authentications = 0
+        self.terminated = []
+
+    def authenticate(self):
+        self.authentications += 1
+        return self.authenticated
+
+    def refresh(self):
+        return True
+
+    def terminate(self, pid):
+        self.terminated.append(pid)
+        return True
+
+
+def tunnel_home(tmp_path, monkeypatch) -> VistoHome:
+    """An installed home with the driver's tunnel script and node; no tunnel runs yet.
+
+    A launched script counts as ready at once: readiness has its own tests.
+    """
+    monkeypatch.setattr(ios_tunnel, "port_in_use", lambda port: False)
+    monkeypatch.setattr(ios_tunnel.IosTunnel, "_await_ready", lambda self, timeout_s: None)
+    home = installed_home(tmp_path)
+    paths = Toolchain(home).paths()
+    script = paths.appium_dir / ios_tunnel.SCRIPT
+    script.parent.mkdir(parents=True)
+    script.write_text("", encoding="utf-8")
+    paths.node.parent.mkdir(parents=True, exist_ok=True)
+    paths.node.write_text("", encoding="utf-8")
+    return home
+
+
+def test_ios_tunnel_starts_before_appium_and_stops_with_visto(tmp_path, quiet, monkeypatch):
+    home = tunnel_home(tmp_path, monkeypatch)
+    order = []
+    sudo = FakeSudo()
+    sudo.terminate = lambda pid: order.append("tunnel stopped") or True
+
+    def tunnel_popen(argv, **kwargs):
+        order.append("tunnel started")
+        return FakePopen()
+
+    def appium_popen(argv, **kwargs):
+        order.append("appium started")
+        return FakePopen()
+
+    code = run_start(
+        home,
+        open_browser=False,
+        serve=immediate,
+        popen=appium_popen,
+        ios_tunnel=True,
+        sudo=sudo,
+        tunnel_popen=tunnel_popen,
+    )
+    assert code == 0
+    assert order == ["tunnel started", "appium started", "tunnel stopped"]
+
+
+def test_failed_tunnel_authentication_is_explained_and_appium_still_starts(tmp_path, quiet):
+    lines = []
+    captured = {}
+    code = run_start(
+        installed_home(tmp_path),
+        open_browser=False,
+        serve=immediate,
+        output=lines.append,
+        popen=capturing(captured),
+        ios_tunnel=True,
+        sudo=FakeSudo(authenticated=False),
+        tunnel_popen=lambda argv, **kwargs: pytest.fail("no tunnel without authentication"),
+    )
+    assert code == 0 and "argv" in captured
+    assert any(line.startswith("The iOS tunnel was not started") for line in lines)
+
+
+def test_tunnel_stops_reporting_before_appium_stops_and_is_terminated_after(
+    tmp_path, quiet, monkeypatch
+):
+    """Ctrl+C reaches sudo at once: its end while Appium stops is not a failure notice."""
+    monkeypatch.setattr(ios_tunnel, "WATCH_S", 0.01)
+    home = tunnel_home(tmp_path, monkeypatch)
+    order, lines = [], []
+    tunnel_process = FakePopen()
+    sudo = FakeSudo()
+    sudo.terminate = lambda pid: order.append("tunnel terminated") or True
+    begin_stop = ios_tunnel.IosTunnel.begin_stop
+
+    def recording_begin_stop(self):
+        order.append("tunnel stopping")
+        begin_stop(self)
+
+    monkeypatch.setattr(ios_tunnel.IosTunnel, "begin_stop", recording_begin_stop)
+
+    class Appium(FakePopen):
+        def _terminate(self):
+            order.append("appium stopped")
+            tunnel_process.returncode = -2  # The SIGINT sudo also received.
+            ios_tunnel.time.sleep(0.1)  # Time for the watcher to look.
+            super()._terminate()
+
+    def serve(app, port, **kwargs):
+        raise KeyboardInterrupt
+
+    code = run_start(
+        home,
+        open_browser=False,
+        serve=serve,
+        output=lines.append,
+        popen=lambda argv, **kwargs: Appium(),
+        ios_tunnel=True,
+        sudo=sudo,
+        tunnel_popen=lambda argv, **kwargs: tunnel_process,
+    )
+    assert code == 0
+    assert order[:2] == ["tunnel stopping", "appium stopped"]
+    assert not any("iOS tunnel stopped" in line for line in lines)
+
+
+def test_unsafe_tunnel_code_is_refused_before_asking_for_the_password(tmp_path, quiet, monkeypatch):
+    if os.name != "posix":
+        pytest.skip("POSIX ownership and modes")
+    home = tunnel_home(tmp_path, monkeypatch)
+    script = Toolchain(home).paths().appium_dir / ios_tunnel.SCRIPT
+    script.chmod(0o666)
+    lines, captured = [], {}
+    sudo = FakeSudo()
+    code = run_start(
+        home,
+        open_browser=False,
+        serve=immediate,
+        output=lines.append,
+        popen=capturing(captured),
+        ios_tunnel=True,
+        sudo=sudo,
+        tunnel_popen=lambda argv, **kwargs: pytest.fail("no tunnel from writable code"),
+    )
+    assert code == 0 and "argv" in captured
+    assert sudo.authentications == 0
+    assert any(
+        line.startswith("The iOS tunnel was not started") and "writable by other users" in line
+        for line in lines
+    )
+
+
+def test_ios_runs_get_the_tunnel_supervisor_to_bring_the_tunnel_back(tmp_path, quiet, monkeypatch):
+    home = tunnel_home(tmp_path, monkeypatch)
+    seen = {}
+
+    def create_app(**kwargs):
+        seen.update(kwargs)
+        return object()
+
+    monkeypatch.setattr("visto.commands.start.create_app", create_app)
+    code = run_start(
+        home,
+        open_browser=False,
+        serve=immediate,
+        popen=capturing({}),
+        ios_tunnel=True,
+        sudo=FakeSudo(),
+        tunnel_popen=lambda argv, **kwargs: FakePopen(),
+    )
+    assert code == 0
+    prepare = seen["ios_prepare"]
+    assert isinstance(prepare.__self__, ios_tunnel.TunnelSupervisor)
+    assert prepare.__func__ is ios_tunnel.TunnelSupervisor.ensure
+
+
+def test_without_the_tunnel_ios_runs_get_no_preparation(tmp_path, quiet, monkeypatch):
+    seen = {}
+
+    def create_app(**kwargs):
+        seen.update(kwargs)
+        return object()
+
+    monkeypatch.setattr("visto.commands.start.create_app", create_app)
+    run_start(installed_home(tmp_path), open_browser=False, serve=immediate, popen=capturing({}))
+    assert seen["ios_prepare"] is None

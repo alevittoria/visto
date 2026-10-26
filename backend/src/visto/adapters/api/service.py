@@ -6,7 +6,7 @@ import re
 import sqlite3
 from collections.abc import Awaitable, Callable
 from contextlib import closing
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -70,6 +70,10 @@ class WebSettings:
     # Operator-selectable models (OpenAI docs, see docs/references.md); default first.
     models: tuple[str, ...] = ("gpt-6-luna", "gpt-5.6-terra", "gpt-6-sol")
     limits: RunLimits = RunLimits(1200000, 60, 90, 60000, 10000)
+    # Passed to every iOS run (see RunnerSettings.ios_prepare); `visto start` sets it.
+    ios_prepare: Callable[[str, float], object] | None = field(
+        default=None, compare=False, repr=False
+    )
 
 
 @dataclass
@@ -379,6 +383,7 @@ class ExecutionService:
                     lease_directory=self.settings.lease_directory,
                     platform=request.platform,
                     ios_signing=stored.load().ios,
+                    ios_prepare=self.settings.ios_prepare,
                     **({"capabilities": ()} if request.observe_only else {}),
                 )
                 control = MutableRunControl()

@@ -10,7 +10,7 @@ type Message = { text: string; tone: 'error' | 'info' };
 
 const IOS_FIELDS: { name: 'team_id' | 'signing_id' | 'wda_bundle_id' | 'wda_derived_data'; label: string; help: string }[] = [
   { name: 'team_id', label: 'Development team ID', help: 'Signs the WebDriverAgent runner for a physical iPhone.' },
-  { name: 'signing_id', label: 'Signing identity', help: 'Leave empty to use the automatic identity.' },
+  { name: 'signing_id', label: 'Signing identity', help: 'Leave empty to use the automatic identity, or set the certificate type, usually "Apple Development", not the full name. Run security find-identity -v -p codesigning in a terminal to see what you have.' },
   { name: 'wda_bundle_id', label: 'WebDriverAgent bundle ID', help: 'A bundle ID unique to your team.' },
   { name: 'wda_derived_data', label: 'Derived data folder', help: 'Where the built runner is kept. Leave empty for the default.' },
 ];

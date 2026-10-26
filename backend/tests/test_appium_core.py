@@ -3,6 +3,7 @@ import hashlib
 import http.client
 import json
 import shutil
+import threading
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -10,6 +11,7 @@ from uuid import uuid4
 import pytest
 
 from visto.adapters.appium import AppiumSession
+from visto.adapters.appium.session import AppiumRefusal
 from visto.adapters.appium.wire import CommandError, HttpWire
 from visto.application.ports import OperatorActionRequired, PortError
 from visto.application.runtime import utc_now
@@ -149,6 +151,106 @@ def test_marker_is_retained_when_session_creation_fails(tmp_path):
             await device.acquire("run", "device-A", 1000)
         assert str(error.value).startswith("stub: ") and "sensitive" not in str(error.value)
         assert len(list(tmp_path.glob("*.lease"))) == 1
+
+    asyncio.run(scenario())
+
+
+def test_explicit_session_refusal_releases_marker(tmp_path):
+    async def scenario():
+        device = StubDevice(tmp_path, RefusingWire("unknown device"))
+        with pytest.raises(PortError, match="stub: Appium request failed"):
+            await device.acquire("run", "device-A", 1000)
+        assert not list(tmp_path.glob("*.lease"))
+        assert device._marker is None and device._token is None
+
+    asyncio.run(scenario())
+
+
+def test_refusal_with_operator_hint_releases_marker_and_keeps_the_hint(tmp_path):
+    async def scenario():
+        device = DiagnosingDevice(tmp_path, RefusingWire("a known refusal"))
+        with pytest.raises(OperatorActionRequired, match="fix the stub server"):
+            await device.acquire("run", "device-A", 1000)
+        assert not list(tmp_path.glob("*.lease"))
+
+    asyncio.run(scenario())
+
+
+def test_refusal_whose_marker_cannot_be_removed_keeps_ownership(tmp_path, monkeypatch):
+    def failing_unlink(self, missing_ok=False):
+        raise OSError("read-only lease directory")
+
+    async def scenario():
+        device = StubDevice(tmp_path, RefusingWire("unknown device"))
+        monkeypatch.setattr(Path, "unlink", failing_unlink)
+        with pytest.raises(PortError, match="stub: session refused; ownership retained") as error:
+            await device.acquire("run", "device-A", 1000)
+        monkeypatch.undo()
+        assert not isinstance(error.value, AppiumRefusal)
+        assert len(list(tmp_path.glob("*.lease"))) == 1
+        assert device._marker is not None and device._token is not None
+
+    asyncio.run(scenario())
+
+
+def test_explicit_refusal_is_an_appium_refusal(tmp_path):
+    async def scenario():
+        device = StubDevice(tmp_path, RefusingWire("unknown device"))
+        with pytest.raises(AppiumRefusal):
+            await device.acquire("run", "device-A", 1000)
+
+    asyncio.run(scenario())
+
+
+class LateRefusingWire(FakeWire):
+    """Answers the session request with a W3C error only once the test allows it."""
+
+    def __init__(self):
+        super().__init__()
+        self.answer = threading.Event()
+
+    def request(self, method, path, body, timeout_ms):
+        self.calls.append((method, path, body, timeout_ms))
+        self.answer.wait(5)
+        raise CommandError("appium: command failure", "unknown device")
+
+
+def test_refusal_after_the_startup_deadline_keeps_the_marker_it_reported(tmp_path):
+    async def scenario():
+        wire = LateRefusingWire()
+        device = StubDevice(tmp_path, wire)
+        with pytest.raises(PortError, match="session startup timed out; ownership retained"):
+            await device.acquire("run", "device-A", 50)
+        wire.answer.set()
+        with pytest.raises(PortError):
+            await device._pending
+        # The caller was told ownership is retained: the late refusal keeps it so.
+        assert len(list(tmp_path.glob("*.lease"))) == 1
+        assert device._marker is not None
+
+    asyncio.run(scenario())
+
+
+def test_deadline_that_fires_just_after_a_released_refusal_says_so(tmp_path, monkeypatch):
+    from visto.adapters.appium import session
+
+    async def late_deadline(awaitable, timeout):
+        # The worker finished first, then the deadline still fired.
+        try:
+            await awaitable
+        except PortError:
+            pass
+        raise TimeoutError
+
+    async def scenario():
+        device = StubDevice(tmp_path, RefusingWire("unknown device"))
+        monkeypatch.setattr(session.asyncio, "wait_for", late_deadline)
+        with pytest.raises(PortError) as error:
+            await device.acquire("run", "device-A", 1000)
+        monkeypatch.undo()
+        assert "ownership released" in str(error.value)
+        assert "retained" not in str(error.value)
+        assert not list(tmp_path.glob("*.lease"))
 
     asyncio.run(scenario())
 

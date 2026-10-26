@@ -234,12 +234,29 @@ retry arbitrary failures or infer orientation.
   folder that should be used for derived data") when the operator names the
   build's derived data folder; with both, the installed driver runs
   `xcodebuild test-without-building -derivedDataPath <path>`. `appium:xcodeOrgId` (team identifier, effective only
-  with `appium:xcodeSigningId`), `appium:xcodeSigningId` (certificate name) and
+  with `appium:xcodeSigningId`), `appium:xcodeSigningId` (certificate type such as `Apple Development`; a full
+  certificate name conflicts with WebDriverAgent's automatic signing, which
+  `xcodebuild` reports as conflicting provisioning settings) and
   `appium:updatedWDABundleId` (WebDriverAgent bundle identifier, which needs a matching
   provisioning profile) carry the signing values; they are configuration, never logged.
   `appium:usePreinstalledWDA` is the alternative for iOS 17 or newer, which launches an
   installed runner without `xcodebuild`; it is not used, since the pre-step builds and
   installs WebDriverAgent itself.
+- `appium:useNewWDA`, read in the installed driver 12.19.1 source
+  (`build/lib/commands/wda/startup.js`, `prepareForXcodebuild`): when true and
+  `xcodebuild` is needed, the driver quits and uninstalls WebDriverAgent before starting
+  a new one; when false it first tries to reuse a running WebDriverAgent
+  (`setupCaching`). The adapter sets it only for one retry, after the session's first
+  request answered "Not authorized for performing UI testing actions", or that a
+  previously found element's application "is not running": the answers of a reused
+  WebDriverAgent that a stopped Appium left on the phone. The capability page warns that real devices work best
+  without reinstalling WebDriverAgent, hence once per run and only for that cause.
+- The driver's `tunnel-creation` script (installed driver 12.19.1,
+  `scripts/tunnel-creation.mjs`): must run as root, builds tunnels only for phones
+  connected by USB when it starts (and for wireless Apple TV), exits when it finds
+  none, and serves a registry on port 42314 with
+  `GET /remotexpc/tunnels/:udid?waitMs=<ms>` ("long-poll until catalog ready"). Read
+  from the script source and its log output, not from a separate documentation page.
 - [`mobile: pressButton`](https://appium.github.io/appium-xcuitest-driver/latest/reference/execute-methods/):
   execute method taking `name`, case-insensitive; on iOS `home` is accepted, while
   `volumeup`/`volumedown` are real devices only. `home` is the adapter's home command.

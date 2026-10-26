@@ -20,6 +20,13 @@ dated progress notes here.
   as one whole-value set, `back`, `home`, `enter`) and fail-closed
   device leases in the Visto home. Device inventory via a fixed, bounded
   `adb devices -l`; the backend starts the adb server at startup.
+- **iOS tunnel**: on macOS `visto start` runs the XCUITest driver's tunnel script as
+  root through sudo (one password prompt, credential refreshed while running,
+  ownership and permission checks before escalating, `--no-ios-tunnel` to opt out),
+  prints a notice when the script ends on its own, starts it again before a run on a
+  physical iPhone when it has ended, and stops it after Appium. The tunnel only covers
+  phones connected by USB cable. Refreshing the device list also
+  tries to reconnect paired phones that CoreDevice reports as not connected.
 - **iOS adapter**: Appium/XCUITest sessions bound to a simulator or an attached
   device, the same seven typed commands, and `back` as a dispatch-only swipe from
   the left screen edge that may not navigate — the AI judges the effect from the
@@ -109,11 +116,29 @@ dated progress notes here.
 - Storage errors are logged without their original cause.
 - An answer racing the run deadline returns 503.
 - `cleanup_failed` is not durable.
-- A failed session start leaves a device lease that needs manual cleanup. On iOS
-  a session created but found unusable is deleted once and the lease released
-  when that delete succeeds; otherwise the lease is retained for manual recovery.
-- A failed session start is stored with a generic detail; the cause (for example
-  an `xcodebuild` error) is only in the Appium server log.
+- A failed session start whose outcome is uncertain leaves a device lease that needs
+  manual cleanup. An explicit Appium refusal of the session request releases it, and
+  on iOS a session created but found unusable is deleted once and the lease released
+  when that delete succeeds.
+- A failed session start is stored with a generic detail unless the adapter
+  recognises the cause (iOS: phone not visible to Appium, WebDriverAgent launch
+  failure); other causes, such as the exact `xcodebuild` error, are only in the
+  Appium server log or the build result.
+- The iOS tunnel, its sudo handling and the refresh reconnect have local checks
+  only. Stopping the tunnel signals the sudo process Visto started and relies on sudo
+  relaying the signal to the script (sudo was seen running a second sudo before node);
+  that relay and `devicectl device info details` on a disconnected phone are
+  unverified. The ownership checks cannot stop another process of the same user
+  from replacing the files root runs.
+- The tunnel script exits when no phone is on USB at start; Visto starts it again
+  before the next run on a physical iPhone and waits for that phone's tunnel through
+  the driver's registry. This relaunch has local checks only, and depends on the sudo
+  credential cached at `visto start` still being valid. Simulators are told apart by
+  their UUID-shaped device ID. `visto run` does not start the tunnel.
+- After `visto start` restarts, the WebDriverAgent left on the phone is reused and
+  refuses UI testing; the adapter deletes that session and retries once with
+  `appium:useNewWDA`. The retry has local checks only; the stale-runner answers it
+  recognises come from a real session.
 - Nothing compares a requested platform with the attached device: a mismatch
   surfaces only as a session that Appium cannot start.
 - No DOM tests for React components.

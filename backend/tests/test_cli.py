@@ -483,6 +483,15 @@ def test_runtime_selects_the_adapter_and_versions_from_the_platform(
     assert configuration.identity.instruction_version == instructions
 
 
+def test_ios_runtime_gets_the_tunnel_preparation(root):
+    def prepare(udid, timeout_s):
+        return None
+
+    settings = RunnerSettings("device-B", root, platform=Platform.IOS, ios_prepare=prepare)
+    loop = build_runtime(settings, "test-key", MutableRunControl())
+    assert loop.device._prepare is prepare
+
+
 def test_cli_data_dir_follows_home(tmp_path):
     args = parser().parse_args(["inspect", "--home", str(tmp_path), "--run-id", "r"])
     assert resolved_data_dir(args) == tmp_path / "data"
@@ -534,7 +543,14 @@ def test_setup_and_start_dispatch_with_their_options(tmp_path, monkeypatch):
     assert calls[0][0].root == tmp_path
     assert calls[0][1] == {"accept_license": True, "ca_bundle": bundle}
     assert calls[1][1] == {"accept_license": None, "ca_bundle": None}
-    assert calls[2][1] == {"port": 8100, "appium_port": 4800, "open_browser": False}
+    assert calls[2][1] == {
+        "port": 8100,
+        "appium_port": 4800,
+        "open_browser": False,
+        "ios_tunnel": cli.ios_host(),
+    }
+    assert cli.main(["start", "--home", str(tmp_path), "--no-ios-tunnel"]) == 0
+    assert calls[3][1]["ios_tunnel"] is False
 
 
 def test_setup_keeps_the_short_license_flag(tmp_path):

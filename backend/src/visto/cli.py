@@ -95,6 +95,11 @@ def parser():
     start.add_argument("--port", type=int, default=8000)
     start.add_argument("--appium-port", type=int, default=4723)
     start.add_argument("--no-browser", action="store_true")
+    start.add_argument(
+        "--no-ios-tunnel",
+        action="store_true",
+        help="macOS: do not start the iOS tunnel, so Visto never asks for the password",
+    )
     settings = sub.add_parser("settings", help="Manage the provider key and show settings")
     settings.add_argument(
         "action",
@@ -366,6 +371,7 @@ def main(argv=None, *, output=print, prompt=input, factory=build_runtime):
                 port=args.port,
                 appium_port=args.appium_port,
                 open_browser=not args.no_browser,
+                ios_tunnel=ios_host() and not args.no_ios_tunnel,
             )
         if args.command == "settings":
             return run_settings(resolved_home(args), args.action)

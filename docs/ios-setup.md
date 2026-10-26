@@ -77,7 +77,7 @@ run without a restart.
 | Settings field | Appium capability | Meaning |
 |---|---|---|
 | Development team ID | `appium:xcodeOrgId` | Apple team identifier |
-| Signing identity | `appium:xcodeSigningId` | Signing identity name |
+| Signing identity | `appium:xcodeSigningId` | Certificate type, normally `Apple Development`; not the full certificate name. Leave empty for the automatic identity |
 | WebDriverAgent bundle ID | `appium:updatedWDABundleId` | Your unique WebDriverAgent bundle identifier |
 | Use a prebuilt WebDriverAgent | `appium:usePrebuiltWDA` | Use the WebDriverAgent you built and installed in the pre-step |
 | Derived data folder | `appium:derivedDataPath` | Derived data folder of your WebDriverAgent build; a leading `~` is expanded |
@@ -158,10 +158,63 @@ and why the "Use a prebuilt WebDriverAgent" setting matters. You do these first.
 ownership marker is created leaves nothing behind: the adapter already owns a
 device, the lease directory cannot be created, or a marker for the device
 already exists and is left untouched. Once the marker exists, a startup that
-fails or is ambiguous retains it on purpose, because the remote session may
-exist; that is the normal outcome of a failed startup and needs the recovery
-below. If the session was created but is unusable, the adapter makes one bounded
-attempt to delete it and releases the marker only when that delete succeeded.
+is ambiguous retains it on purpose, because the remote session may exist. Appium
+refusing the session request with an error answer releases the marker, whether or
+not the refusal carries an operator hint: no session was created. A refusal that
+arrives after the startup deadline, or whose marker cannot be deleted, keeps the
+marker, and the error says ownership is retained. Any other failure keeps the
+marker and needs the recovery below. If the session was created but is unusable,
+the adapter makes one bounded attempt to delete it and releases the marker only
+when that delete succeeded.
+
+## iOS tunnel
+
+Appium needs a RemoteXPC tunnel to see physical iOS 17 and later devices. On macOS,
+`visto start` runs the XCUITest driver's `tunnel-creation` script for you. The
+script must run as root, so Visto asks for your administrator password once, in the
+terminal where `visto start` runs. The tunnel starts before Appium.
+
+While `visto start` runs, Visto keeps the sudo credential fresh, also after the tunnel
+has ended so that it can start it again. Any other process in the same terminal
+session can therefore run `sudo` without a password until Visto stops and the
+credential times out. If refreshing it fails, Visto prints that the
+administrator credential expired and that it may not be able to stop the tunnel.
+
+When `visto start` stops, Visto stops Appium first and then the tunnel. Ctrl+C also
+reaches the tunnel's `sudo`, which shares the terminal, so the script may end while
+Appium is still stopping. Visto stops watching the tunnel as soon as it begins to
+shut down, before stopping Appium, so this is not reported as a failure; an exit in
+the moment between Ctrl+C and that point can still be reported. To stop the
+script, Visto signals only the `sudo` process it started
+(`sudo -n kill -TERM <sudo pid>`); sudo relays the signal to the script, and no other
+process is signalled. If that fails or the script is still running after ten seconds,
+Visto prints the exact command to stop it by hand. These `sudo` and `kill` command
+lines are covered by tests with the commands replaced, not by a run against a real
+`sudo`.
+
+Before it asks for the password, Visto refuses to start the tunnel, prints why and
+keeps running, unless the Node.js binary, the script and every folder between the
+script and the Visto home belong to you or to root and are not writable by group or
+others. These checks stop other users from changing what runs as root; they do not
+stop another process running as your own user from replacing those files. If you do
+not want Visto to run anything as root, start it with `visto start --no-ios-tunnel`
+and run the tunnel yourself, or use simulators and Android only.
+
+The script only builds a tunnel for phones connected by USB cable, and only for those
+connected when it starts; if it finds none it exits, and Visto prints that no phone is
+connected by cable. You do not need to restart Visto: before each run on a physical
+iPhone, Visto starts the script again if it has ended, with the credential cached by
+the first password prompt, and waits for the tunnel of that phone. This takes at most
+half the run's startup time budget; if the tunnel is not ready by then, the run goes on
+and fails with the hint below when Appium cannot see the phone. Runs on a simulator
+(a UUID-shaped device ID) skip this step. If the credential has expired, the script
+cannot start again and Visto prints why; restart `visto start` to enter the password
+again.
+
+If a tunnel already answers on its registry port (42314), Visto uses it and does not
+start its own. If you decline the password, or the script cannot start, Visto prints
+why and keeps running: Android and simulator runs still work, and physical iOS
+devices are unavailable until Visto is restarted with the password.
 
 ## Check readiness
 
@@ -183,6 +236,15 @@ reported but do not change the exit code.
 
 The console and `GET /readiness` expose `platforms`. It lists which device
 sources are configured on the server, not what the machine can drive.
+
+Refreshing the device list also tries to bring back a paired phone that CoreDevice
+reports as not connected. For each such phone (at most four), it makes one bounded,
+read-only `xcrun devicectl device info details` call, which may connect to the phone,
+then lists the devices again. No Xcode build is needed. If the phone stays unavailable,
+the call changed nothing and the list says so. This relies on the `devicectl` help text,
+which says the command may connect to the device; it has not been checked against a
+phone in the disconnected state. When a paired phone is switched off or out of reach,
+Refresh can take up to about ten seconds longer.
 
 ## Start a run
 
@@ -214,8 +276,12 @@ retained-lease recovery below after such a mistake. See
 ## When a run does not start
 
 A failed session start ends the run as an infrastructure failure at
-`device.acquire` with a generic detail, and retains the device lease (see the
-recovery below). The cause is not stored with the run. Look in two places:
+`device.acquire`. An Appium refusal releases the device lease; any other failed start
+retains it (see the recovery below). When Appium reports `Unknown device or simulator
+UDID`, the detail tells you to connect the phone with a USB cable, unlock it and
+start the run again. When it reports `Unable to launch WebDriverAgent`, the detail
+points to the signing values and to the build result below; other causes keep a
+generic detail. For those other causes, look in two places:
 
 - The Appium log, `~/.visto/logs/appium.log`. At Visto's `--log-level warn` it
   shows `Unable to launch WebDriverAgent` and the `xcodebuild` exit code, not the
@@ -229,15 +295,25 @@ recovery below). The cause is not stored with the run. Look in two places:
 | Error in the test result | Cause and fix |
 |---|---|
 | "Failed to install the app on the device" … "The file doesn't exist" | No runner build in that folder: set "Derived data folder" in Settings to the folder that holds it and save |
+| "has conflicting provisioning settings" … "code signing identity … has been manually specified" | Signing identity holds the full certificate name: set it to `Apple Development` in Settings and save. `security find-identity -v -p codesigning` lists your certificates |
 | "The Developer App Certificate is not trusted" | [Trust the developer profile](#trust-the-developer-profile) on the phone |
 
 A new `WebDriverAgent-*` folder that appears under derived data with no
 `Build/Products` is the trace of the first case.
 
+When `visto start` stops, the WebDriverAgent it started can stay open on the phone
+without its test session. Appium would reuse it at the next run, and it then answers
+"Not authorized for performing UI testing actions". Visto recognises that answer,
+deletes the session and starts it once more with `appium:useNewWDA`, which makes the
+driver uninstall that WebDriverAgent and build and start a new one; this adds roughly
+the time of a first start to that run. If the new one fails the same way, the run
+ends with a detail that asks you to close the WebDriverAgent app on the phone and
+check that UI Automation is enabled in the phone's Developer settings.
+
 ## Recovery of a retained lease
 
-An uncertain mutation, an unusable session, a failed startup or a failed cleanup
-retains the ownership marker, as on Android. A retained lease needs manual
+An uncertain mutation, an unusable session, an ambiguous startup or a failed cleanup
+retains the ownership marker, as on Android. An explicit Appium refusal does not. A retained lease needs manual
 recovery:
 
 1. Stop the runner (which stops the Appium it started), and confirm no WebDriverAgent session is still

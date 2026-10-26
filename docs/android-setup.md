@@ -129,10 +129,12 @@ so the console and the CLI cannot drive the same device at once. An O_EXCL file
 named SHA256(serial).lease is created before session startup and contains a
 random ownership token, PID, run and device IDs. Only the same live adapter/token
 may delete it after confirmed session cleanup. There is no automatic stealing,
-PID-based reclamation or stale timeout. Failed/unknown session startup retains
-its marker too. The marker is a local-process coordination mechanism; separate
-machines or unrelated Appium clients are outside that lock, so use one host and
-prevent competing manual automation clients.
+PID-based reclamation or stale timeout. A session request that Appium explicitly
+refuses with a W3C error, with or without an operator hint, releases its marker,
+because no session exists; any other failed or unknown session startup retains it.
+The marker is a local-process coordination mechanism; separate machines or
+unrelated Appium clients are outside that lock, so use one host and prevent
+competing manual automation clients.
 
 After a crash, unknown startup, uncertain mutation or cleanup failure:
 

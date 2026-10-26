@@ -3,6 +3,7 @@
 import logging
 import re
 import sys
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from importlib.metadata import version
@@ -33,8 +34,12 @@ from visto.toolchain.appium import installed_driver_version, wda_project
 _LOG = logging.getLogger(__name__)
 
 
-def default_settings(home: VistoHome, appium_url: str | None = None) -> WebSettings:
-    settings = WebSettings(home.data, SettingsStore(home), home.leases)
+def default_settings(
+    home: VistoHome,
+    appium_url: str | None = None,
+    ios_prepare: Callable[[str, float], object] | None = None,
+) -> WebSettings:
+    settings = WebSettings(home.data, SettingsStore(home), home.leases, ios_prepare=ios_prepare)
     return settings if appium_url is None else replace(settings, appium_url=appium_url)
 
 
@@ -89,11 +94,13 @@ def create_app(
     home: VistoHome | None = None,
     appium_url: str | None = None,
     ios: bool | None = None,
+    ios_prepare: Callable[[str, float], object] | None = None,
 ) -> FastAPI:
     """Create the local HTTP application without contacting device or provider.
 
     `appium_url` is the Appium the console's runs use (`visto start` passes the port
-    it started Appium on). `ios` defaults to whether this host is a Mac; elsewhere no
+    it started Appium on), and `ios_prepare` what brings its iOS tunnel back before an
+    iOS run. `ios` defaults to whether this host is a Mac; elsewhere no
     iOS device source is wired, so no iOS wording or platform reaches the console.
     """
     ios = sys.platform == "darwin" if ios is None else ios
@@ -101,7 +108,9 @@ def create_app(
     # An injected service without a home (tests) never reads the user's toolchain.
     tools = None if home is None and service is not None else managed_tools(home or default_home())
     if service is None:
-        execution = ExecutionService(default_settings(home or default_home(), appium_url))
+        execution = ExecutionService(
+            default_settings(home or default_home(), appium_url, ios_prepare)
+        )
         adb = tools.adb if tools is not None and tools.adb.is_file() else find_adb()
 
         async def prepare():

@@ -464,3 +464,175 @@ def test_a_reconciliation_that_itself_fails_retains_the_marker(tmp_path):
             await second.acquire("other", "device-A", 2000)
 
     asyncio.run(scenario())
+
+
+def test_unknown_device_refusal_tells_the_operator_to_connect_the_phone_by_cable(tmp_path):
+    device = XCUITestDevice("http://unused", tmp_path)
+    hint = device.diagnose("Unknown device or simulator UDID: '00008000-000A000A00000000'")
+    assert "USB cable" in hint and "tunnel" in hint
+    assert "00008000" not in hint
+    assert device.diagnose("Something else failed") is None
+
+
+def test_webdriveragent_launch_failure_points_to_signing_and_the_build_result(tmp_path):
+    device = XCUITestDevice("http://unused", tmp_path)
+    hint = device.diagnose(
+        "Unable to launch WebDriverAgent. Original error: xcodebuild failed with code 65."
+        " /private/path/to/build"
+    )
+    assert "Signing identity" in hint and "Apple Development" in hint
+    assert "xcodebuild" in hint and "iOS setup" in hint
+    assert "/private/path" not in hint and "65" not in hint
+
+
+def test_the_ios_tunnel_is_prepared_for_the_phone_before_its_session_is_requested(tmp_path):
+    wire = FakeWire()
+    seen = []
+
+    def prepare(udid, timeout_s):
+        seen.append((udid, timeout_s, len(wire.calls)))
+
+    async def scenario():
+        device = XCUITestDevice("http://127.0.0.1:4723", tmp_path, wire=wire, prepare=prepare)
+        lease = await device.acquire("run", "device-A", 3000)
+        await device.release(lease)
+
+    asyncio.run(scenario())
+    assert seen and seen[0][0] == "device-A" and seen[0][2] == 0
+    assert seen[0][1] == 1.5  # Half of the 3000 ms startup budget.
+
+
+def test_a_failing_preparation_does_not_stop_the_session_attempt(tmp_path):
+    wire = FakeWire()
+
+    def prepare(udid, timeout_s):
+        raise RuntimeError("tunnel trouble")
+
+    async def scenario():
+        device = XCUITestDevice("http://127.0.0.1:4723", tmp_path, wire=wire, prepare=prepare)
+        lease = await device.acquire("run", "device-A", 3000)
+        await device.release(lease)
+
+    asyncio.run(scenario())
+    assert any(call[1] == "/session" for call in wire.calls)
+
+
+from visto.adapters.appium.wire import CommandError  # noqa: E402
+from visto.application.ports import OperatorActionRequired  # noqa: E402
+
+# What a WebDriverAgent left running by an earlier Appium answers once its test
+# session is gone; app and device names are not part of these answers.
+STALE_RECT = (
+    "The previously found element \"Application 'local.pid.0'\" is not present in the"
+    " current view anymore. Original error: Application local.pid.0 is not running"
+)
+UNAUTHORISED = (
+    'Error Domain=XCTDaemonErrorDomain Code=41 "Not authorized for performing UI testing actions."'
+)
+
+
+class StaleRunnerWire(FakeWire):
+    """Appium reuses a stale runner until a session asks for a new one, which stays."""
+
+    def __init__(self, message=STALE_RECT, *, always=False):
+        super().__init__()
+        self.message = message
+        self.always = always
+        self.replaced = False
+
+    def request(self, method, path, body, timeout_ms):
+        if path == "/session" and body["capabilities"]["alwaysMatch"].get("appium:useNewWDA"):
+            self.replaced = True
+        if method == "GET" and path.endswith("/window/rect") and (self.always or not self.replaced):
+            self.calls.append((method, path, body, timeout_ms))
+            raise CommandError("appium: command failure", self.message)
+        return super().request(method, path, body, timeout_ms)
+
+
+def created_with(wire):
+    return [
+        call[2]["capabilities"]["alwaysMatch"].get("appium:useNewWDA")
+        for call in wire.calls
+        if call[1] == "/session"
+    ]
+
+
+@pytest.mark.parametrize("message", [STALE_RECT, UNAUTHORISED])
+def test_a_stale_webdriveragent_is_replaced_once_and_the_new_session_is_used(tmp_path, message):
+    wire = StaleRunnerWire(message)
+
+    async def scenario():
+        device = XCUITestDevice("http://127.0.0.1:4723", tmp_path, wire=wire)
+        lease = await device.acquire("run", "device-A", 3000)
+        assert len(list(tmp_path.glob("*.lease"))) == 1
+        await device.release(lease)
+        # The next run starts normally again: a new runner is not forced every time.
+        await device.release(await device.acquire("run-2", "device-A", 3000))
+
+    asyncio.run(scenario())
+    assert created_with(wire) == [None, True, None]
+    assert [c[0] for c in wire.calls].count("DELETE") == 3
+
+
+def test_a_runner_that_stays_unauthorised_ends_with_an_explicit_hint(tmp_path):
+    wire = StaleRunnerWire(UNAUTHORISED, always=True)
+
+    async def scenario():
+        device = XCUITestDevice("http://127.0.0.1:4723", tmp_path, wire=wire)
+        with pytest.raises(OperatorActionRequired) as error:
+            await device.acquire("run", "device-A", 3000)
+        return str(error.value)
+
+    message = asyncio.run(scenario())
+    assert message.startswith("ios: ") and "UI Automation" in message
+    assert "XCTDaemonErrorDomain" not in message
+    assert created_with(wire) == [None, True]
+    assert not list(tmp_path.glob("*.lease"))
+
+
+def test_an_otherwise_unusable_session_is_not_retried(tmp_path):
+    wire = FakeWire()
+    wire.fail_startup = True
+
+    async def scenario():
+        device = XCUITestDevice("http://127.0.0.1:4723", tmp_path, wire=wire)
+        with pytest.raises(PortError, match="session started but is unusable"):
+            await device.acquire("run", "device-A", 3000)
+
+    asyncio.run(scenario())
+    assert created_with(wire) == [None]
+
+
+@pytest.mark.parametrize("message", [STALE_RECT, UNAUTHORISED])
+def test_stale_runner_answers_get_no_hint_once_the_session_is_in_use(tmp_path, message):
+    # Mid-run, "is not running" may be the app under test that crashed: no runner hint.
+    assert XCUITestDevice("http://unused", tmp_path).diagnose(message) is None
+
+
+def test_a_stale_session_that_cannot_be_deleted_is_not_retried_and_stays_leased(tmp_path):
+    wire = StaleRunnerWire(UNAUTHORISED)
+    wire.fail_delete = True
+
+    async def scenario():
+        device = XCUITestDevice("http://127.0.0.1:4723", tmp_path, wire=wire)
+        with pytest.raises(PortError, match="manual recovery may be required"):
+            await device.acquire("run", "device-A", 3000)
+
+    asyncio.run(scenario())
+    assert created_with(wire) == [None]
+    assert len(list(tmp_path.glob("*.lease"))) == 1
+
+
+def test_no_retry_is_attempted_without_time_left(tmp_path, monkeypatch):
+    wire = StaleRunnerWire(UNAUTHORISED)
+    budgets = iter([3000, 3000])
+    monkeypatch.setattr(XCUITestDevice, "_ms_left", staticmethod(lambda d: next(budgets, 0)))
+
+    async def scenario():
+        device = XCUITestDevice("http://127.0.0.1:4723", tmp_path, wire=wire)
+        with pytest.raises(OperatorActionRequired) as error:
+            await device.acquire("run", "device-A", 3000)
+        return str(error.value)
+
+    message = asyncio.run(scenario())
+    assert created_with(wire) == [None] and "UI Automation" in message

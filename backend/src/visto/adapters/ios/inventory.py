@@ -29,6 +29,11 @@ _MAX_OUTPUT = 1024 * 1024
 _SIMULATORS = ("simctl", "list", "devices", "--json")
 # devicectl has no --json flag: JSON goes to a file, here the process's stdout.
 _PHYSICAL = ("devicectl", "list", "devices", "--quiet", "--json-output", "/dev/stdout")
+# `devicectl device info details` may connect to the device (its own help says so); that
+# is how a paired phone that CoreDevice reports as not connected is brought back.
+_WAKE = ("devicectl", "device", "info", "details", "--quiet")
+_WAKE_TIMEOUT_S = 8
+_MAX_WAKE = 4
 
 
 def find_xcrun(environ: dict[str, str] | None = None) -> Path | None:
@@ -91,6 +96,31 @@ def parse_simulators(payload: str) -> tuple[AttachedDevice, ...]:
     return tuple(devices)
 
 
+def parse_sleeping(payload: str) -> tuple[str, ...]:
+    """UDIDs of paired physical devices that `devicectl` does not report as connected."""
+    result = _load(payload).get("result")
+    entries = result.get("devices") if isinstance(result, dict) else None
+    if not isinstance(entries, list):
+        return ()
+    sleeping = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        hardware = _section(entry, "hardware", "hardwareProperties")
+        connection = _section(entry, "connection", "connectionProperties")
+        udid = hardware.get("udid")
+        if hardware.get("reality") != "physical" or not isinstance(udid, str):
+            continue
+        link = connection.get("state", connection.get("tunnelState"))
+        if (
+            _UDID.fullmatch(udid)
+            and connection.get("pairingState") == "paired"
+            and link != "connected"
+        ):
+            sleeping.append(udid)
+    return tuple(sleeping)
+
+
 def parse_physical(payload: str) -> tuple[AttachedDevice, ...]:
     """Parse `devicectl list devices` JSON; simulators it also reports are skipped."""
     result = _load(payload).get("result")
@@ -144,6 +174,21 @@ def _run(xcrun: Path, arguments: tuple[str, ...], timeout_s: float) -> str:
     return result.stdout.decode("utf-8", "replace")
 
 
+def _wake(xcrun: Path, udid: str, timeout_s: float) -> None:
+    """One bounded read-only call; its outcome is ignored, the next listing tells."""
+    try:
+        subprocess.run(
+            [str(xcrun), *_WAKE, "--timeout", str(_WAKE_TIMEOUT_S), "--device", udid],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout_s,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def _require(xcrun: Path | None) -> Path:
     if xcrun is None:
         raise InventoryUnavailable("xcrun was not found; install Xcode to list iOS devices")
@@ -163,6 +208,11 @@ async def list_physical(xcrun: Path | None, timeout_s: float = 10.0) -> tuple[At
     """Physical devices only (`devicectl`, which talks to the CoreDevice service)."""
     xcrun = _require(xcrun)
     output = await asyncio.to_thread(_run, xcrun, _PHYSICAL, timeout_s)
+    sleeping = parse_sleeping(output)[:_MAX_WAKE]
+    if sleeping:
+        # Pressing Refresh should be enough: no Xcode build to bring the phone back.
+        await asyncio.gather(*(asyncio.to_thread(_wake, xcrun, u, timeout_s) for u in sleeping))
+        output = await asyncio.to_thread(_run, xcrun, _PHYSICAL, timeout_s)
     return parse_physical(output)
 
 

@@ -7,9 +7,10 @@ import webbrowser
 from collections.abc import Callable
 from contextlib import contextmanager
 
-from visto.commands import appium_process
+from visto.commands import appium_process, ios_tunnel
 from visto.commands.appium_process import AppiumFailed, AppiumProcess, PortBusy
 from visto.commands.data import DataUnavailable, prepare_data
+from visto.commands.ios_tunnel import Sudo, TunnelSupervisor, TunnelUnavailable
 from visto.commands.setup import pending_names, run_setup
 from visto.composition import create_app
 from visto.home import VistoHome
@@ -49,6 +50,9 @@ def run_start(
     serve=uvicorn_serve,
     output: Callable[[str], object] = print,
     popen: Callable[..., subprocess.Popen] = subprocess.Popen,
+    ios_tunnel: bool = False,
+    sudo: Sudo | None = None,
+    tunnel_popen: Callable[..., subprocess.Popen] = subprocess.Popen,
     **setup_kwargs,
 ) -> int:
     """Exit codes: 0 stopped normally, setup's code when it fails, 3 failure, 4 busy."""
@@ -84,7 +88,19 @@ def run_start(
             return error.code
         # The provider worker inherits this process's environment.
         with trusted_ca_bundle(state.ca_bundle):
-            return _serve(home, paths, state, port, appium_port, open_browser, serve, output, popen)
+            return _serve(
+                home,
+                paths,
+                state,
+                port,
+                appium_port,
+                open_browser,
+                serve,
+                output,
+                popen,
+                (sudo or Sudo()) if ios_tunnel else None,
+                tunnel_popen,
+            )
 
 
 def _interrupt(signum, frame):
@@ -114,7 +130,51 @@ def _termination_interrupts():
             signal.signal(number, handler)
 
 
-def _serve(home, paths, state, port, appium_port, open_browser, serve, output, popen) -> int:
+def _start_tunnel(home, paths, sudo, tunnel_popen, output) -> TunnelSupervisor | None:
+    """The iOS tunnel and what restarts it, unless one already answers. Never fatal.
+
+    The supervisor exists even when the first launch finds no phone on USB: the next
+    iOS run starts the tunnel again with the credential cached here.
+    """
+    if appium_process.port_in_use(ios_tunnel.REGISTRY_PORT):
+        return None
+    try:
+        # Before the password prompt: refuse to run as root code others can change.
+        ios_tunnel.check_trusted(paths, home.root)
+    except TunnelUnavailable as error:
+        output(f"The iOS tunnel was not started: {error}")
+        return None
+    if not sudo.authenticate():
+        output(
+            "The iOS tunnel was not started: administrator access was not granted. "
+            "Physical iOS devices are unavailable until Visto is restarted."
+        )
+        return None
+    tunnels = TunnelSupervisor(
+        paths,
+        home.logs / "ios-tunnel.log",
+        home=home.root,
+        sudo=sudo,
+        popen=tunnel_popen,
+        notify=output,
+    )
+    tunnels.start()
+    return tunnels
+
+
+def _serve(
+    home,
+    paths,
+    state,
+    port,
+    appium_port,
+    open_browser,
+    serve,
+    output,
+    popen,
+    tunnel_sudo,
+    tunnel_popen,
+) -> int:
     log = home.logs / "appium.log"
     env = child_env(paths, os.environ, state.ca_bundle)
     url = f"http://127.0.0.1:{port}/"
@@ -125,8 +185,11 @@ def _serve(home, paths, state, port, appium_port, open_browser, serve, output, p
             webbrowser.open(url)
 
     appium = None
+    tunnel = None
     with _termination_interrupts():
         try:
+            if tunnel_sudo is not None:
+                tunnel = _start_tunnel(home, paths, tunnel_sudo, tunnel_popen, output)
             try:
                 appium = AppiumProcess.start(paths, env, appium_port, log, popen=popen)
             except PortBusy:
@@ -135,7 +198,11 @@ def _serve(home, paths, state, port, appium_port, open_browser, serve, output, p
             except (AppiumFailed, OSError) as error:
                 output(f"Appium could not start: {error}")
                 return FAILED
-            app = create_app(home=home, appium_url=f"http://127.0.0.1:{appium_port}")
+            app = create_app(
+                home=home,
+                appium_url=f"http://127.0.0.1:{appium_port}",
+                ios_prepare=tunnel.ensure if tunnel is not None else None,
+            )
             serve(app, port, ready=ready, stop=lambda: not appium.alive())
             if not appium.alive():
                 output(f"Appium stopped unexpectedly; see {log}")
@@ -147,5 +214,11 @@ def _serve(home, paths, state, port, appium_port, open_browser, serve, output, p
             output(f"The Visto server stopped: {error}")
             return FAILED
         finally:
+            if tunnel is not None:
+                # Ctrl+C has already reached sudo, which shares this process group:
+                # its end while Appium stops is expected, not a failure to report.
+                tunnel.begin_stop()
             if appium is not None:
                 appium.stop()
+            if tunnel is not None:
+                tunnel.stop()
