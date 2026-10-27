@@ -15,9 +15,9 @@ No selectors. No page objects. No brittle scripts that break when a button moves
 ![iOS: supported](https://img.shields.io/badge/iOS-supported-2fbf71.svg)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-8f7cff.svg)](CONTRIBUTING.md)
 
-<img src="docs/assets/visto-demo.gif" alt="Screen recording of the Visto web console: the goal 'In the Calculator app, compute 12 × 7' with the expected result 'The display shows 84' is typed and the run started; the console shows each device screenshot and the AI's reasoning as it taps 1, 2, ×, 7 and =, then the AI verdict 'passed' citing the screenshot that shows 84" width="900">
+<img src="docs/assets/visto-demo.gif" alt="Screen recording of the Visto web console: on the start screen 'What do you want to test?' the goal 'Open the Calculator app, compute 12 × 7 and check that the display shows 84' is typed with the device and options chips below it and the run is started; the run view shows the Running state with the latest AI reasoning and a growing step list, then the AI verdict 'Passed' citing a screenshot with Rerun and Edit and rerun buttons, and a step expanded" width="900">
 
-<sub>A real run on an Android phone, recorded from the web console. The waiting between steps is sped up 4×.</sub>
+<sub>A real run on a USB-connected Android phone, recorded from the web console: one goal, the AI's reasoning as it works, then its verdict. The waiting between steps is sped up 4×.</sub>
 
 </div>
 

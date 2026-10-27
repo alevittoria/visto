@@ -496,6 +496,26 @@ export function controlAvailability(run: Run | null, connected: boolean, busy: b
   };
 }
 
+/**
+ * Whether to send resume after a confirmed answer. The refreshed run is authoritative (e.g. the run
+ * may have been cancelled meanwhile); the answer response is used only when the refresh failed.
+ */
+export function shouldResumeAfterAnswer(returned: Run, refreshed: Run | null): boolean {
+  return (refreshed ?? returned).can_resume === true;
+}
+
+/**
+ * Feedback after a confirmed answer when no resume is sent, chosen from the latest known run so it
+ * only points to a Resume button that is actually shown.
+ */
+export function answerRecordedText(run: Run): string {
+  if (run.state === 'terminal' || run.interrupted) return 'Answer recorded; the run has ended.';
+  if (run.control_pending === 'cancel') return 'Answer recorded; the run is being cancelled.';
+  if (run.state === 'created' || run.state === 'running') return 'Answer recorded; the run is already running.';
+  if (run.can_resume) return 'Answer recorded. Select Resume to let the AI continue.';
+  return 'Answer recorded. The run cannot resume right now; Resume becomes available when it can.';
+}
+
 export function runIdFromHash(hash: string): string | null {
   const match = /^#run=([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/.exec(hash);
   return match ? match[1] : null;

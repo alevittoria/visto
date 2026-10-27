@@ -43,7 +43,8 @@ export function ActionShot({ marker, entry, id }: { marker: ActionMarker; entry:
   );
 }
 
-function Entry({ entry, observations }: { entry: HistoryEntry; observations: Map<string, ObservationEntry> }) {
+/** Renders one stored record: a kind label and its body, for use inside a timeline row. */
+export function Entry({ entry, observations }: { entry: HistoryEntry; observations: Map<string, ObservationEntry> }) {
   switch (entry.type) {
     case 'observation':
       return (
@@ -98,20 +99,4 @@ function Entry({ entry, observations }: { entry: HistoryEntry; observations: Map
     default:
       return (<><span className="entry-kind">Other record</span><div className="entry-body"><p className="help">Unrecognized record type.</p></div></>);
   }
-}
-
-export function EvidenceHistory({ entries, observations }: { entries: HistoryEntry[]; observations: Map<string, ObservationEntry> }) {
-  return (
-    <section className="panel history" aria-labelledby="history-title">
-      <h2 id="history-title">Evidence history</h2>
-      <p className="help">Everything recorded for this run, oldest first.</p>
-      {entries.length === 0 ? <p className="muted">Nothing recorded yet.</p> : (
-        <ol className="timeline">
-          {entries.map((entry) => (
-            <li key={entry.sequence} className={`entry ${entry.type}`}><Entry entry={entry} observations={observations} /></li>
-          ))}
-        </ol>
-      )}
-    </section>
-  );
 }

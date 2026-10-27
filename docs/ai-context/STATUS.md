@@ -51,13 +51,18 @@ dated progress notes here.
   version strings, and neither domain nor application knows about platforms.
 - **Interfaces**: `visto` CLI (`setup`, `start`, `doctor`, `settings`, `run`,
   `inspect`, observe-only mode, `--platform` with `ios` offered only on macOS);
-  local FastAPI execution and settings API; React console (settings page with a
-  write-only provider key, device picker, model choice, run
-  view with action overlay, controls, questions, run history and deletion, "run
-  again", statistics with daily-priced cost estimates, dictation); JSON/HTML
-  report export. One device picker lists both platforms with the platform
-  visible, selectability follows each platform's own state vocabulary, and a run
-  cannot be submitted until a device list has confirmed the device's platform.
+  local FastAPI execution and settings API; React console with a prompt-first
+  start screen (one goal field with Device and Options chips, start notices, a
+  short privacy line; the device list refreshes on its own while no device is
+  ready and never while a run is open), a live-progress run view (latest AI
+  reasoning, question block that answers and resumes, outcome block with one-click
+  Rerun and Edit and rerun, step list grouped by AI decision with action overlay,
+  details), a collapsible run-history sidebar (drawer on narrow screens), a
+  settings page with a write-only provider key, statistics with daily-priced cost
+  estimates and dictation; JSON/HTML report export. The device list shows both
+  platforms with the platform visible, selectability follows each platform's own
+  state vocabulary, and a run cannot be submitted until a device list has
+  confirmed the device's platform.
 - **Installation**: a wheel attached to GitHub Releases (built by a tag-triggered
   workflow, with the compiled console and the Appium lockfiles inside) is
   installed with `uv tool install`. `visto setup` downloads pinned,
@@ -96,8 +101,11 @@ dated progress notes here.
   pause/resume/cancel through the API, and the `long_press`/`enter` commands.
   This is preliminary smoke, not a labelled evaluation: the product is
   **unevaluated** for judgement quality.
+- The console layout has been checked in a headless browser at desktop and 360 px
+  widths, and a real Android run has passed from the start screen; the README
+  demo is a recording of that run. Screen-reader behaviour has not been checked.
 - Not yet exercised live: console Cancel button, pending question/answer from the
-  console, delayed UI, observe-only mode, CLI path, Appium/provider failure
+  console (question block, answer then resume), one-click Rerun, delayed UI, observe-only mode, CLI path, Appium/provider failure
   handling (expected: infrastructure failure, not a verdict).
 - iOS not yet exercised live: the simulator path, the `connected` device mapping,
   rotation on hardware and the labelled acceptance scenario.
@@ -134,13 +142,17 @@ dated progress notes here.
   recognises come from a real session.
 - Nothing compares a requested platform with the attached device: a mismatch
   surfaces only as a session that Appium cannot start.
-- No DOM tests for React components.
+- No DOM tests for React components; the console's decisions are tested through
+  pure modules (`steps.ts`, `start.ts`, `console.ts`, `form.ts`) only.
+- The composer focus ring relies on CSS `:has()`; browsers without it show no
+  ring on the goal field's frame.
 - Transcription minutes are not included in cost statistics.
 
 ## Next work
 
-1. Independent QA review of the console features (device picker, model choice,
-   deletion, statistics, dictation), installation guide and Android commands.
+1. Hands-on test round of the prompt-first console (start screen, automatic device
+   discovery on iOS, question block, Rerun, history sidebar), then independent QA
+   review of the console features, installation guide and Android commands.
 2. Live checks for the scenarios listed under "Not yet exercised live".
 3. Fix the known issues above, starting with the false-pass pattern.
 4. Repeated labelled evaluation following the

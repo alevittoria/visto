@@ -1,14 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ApiError, apiRequest, canDeleteRun, controlAvailability, createRunMonitor, formatTokens, isUncertain, outcome, parseUsage, pollDelay } from '../console.ts';
+import { answerRecordedText, ApiError, apiRequest, controlAvailability, createRunMonitor, isUncertain, pollDelay, shouldResumeAfterAnswer } from '../console.ts';
 import type { Run, Snapshot } from '../console.ts';
-import { buildHistory, cleanupWarning, formatDuration, formatTime, latestDecision, latestObservation, observationsById, outcomeExplanation } from '../history.ts';
-import { RunControls } from './RunControls.tsx';
-import type { ControlOperation, Message } from './RunControls.tsx';
-import { EvidenceHistory, ObservationThumb } from './EvidenceHistory.tsx';
-import { CurrentScreen, LatestThinking } from './CurrentScreen.tsx';
-import { parseRunCost, runCostText } from '../stats.ts';
+import { buildHistory, latestDecision, observationsById } from '../history.ts';
+import { currentStepNumber, groupSteps } from '../steps.ts';
+import { RunHeader } from './RunHeader.tsx';
+import type { ControlOperation, Message } from './RunHeader.tsx';
+import { QuestionBlock } from './QuestionBlock.tsx';
+import { NowBlock } from './NowBlock.tsx';
+import { InterruptedBlock, OutcomeBlock, ReportLinks } from './OutcomeBlock.tsx';
+import { StepList } from './StepList.tsx';
+import { RunDetails } from './RunDetails.tsx';
 
-interface Props { runId: string; activeRunId: string | null; deleting: boolean; onChanged: () => void; onBack: () => void; onDelete: () => void; onRerun: (run: Run) => void }
+interface Props {
+  runId: string;
+  activeRunId: string | null;
+  deleting: boolean;
+  onChanged: () => void;
+  onBack: () => void;
+  onDelete: () => void;
+  /** One-click rerun with the same settings; the caller reports a blocked rerun through `rerunBlockedReason`. */
+  onRerun: (run: Run) => Promise<void>;
+  /** Back to the start screen prefilled with this run's settings. */
+  onEditRerun: (run: Run) => void;
+  rerunBlockedReason: string | null;
+}
+
+/** Where a feedback message belongs: the question block while it is shown, otherwise the header. */
+type Feedback = Message & { where: 'header' | 'question' };
+type Posted = { ok: true; run: Run } | { ok: false; uncertain: boolean; text: string };
 
 const EMPTY: Snapshot = { run: null, events: [], connected: false, error: null, checkedAt: null };
 const CONFIRMED: Record<ControlOperation, string> = {
@@ -17,13 +36,15 @@ const CONFIRMED: Record<ControlOperation, string> = {
   cancel: 'Cancellation requested. The current step settles first; wait for the status to show Cancelled.',
 };
 const UNCERTAIN = 'The service did not confirm this request, so it may or may not have been applied. Select Reconnect to check the stored state before trying again.';
+const INPUT_NEEDED = 'Input needed · ';
 
-export function RunView({ runId, activeRunId, deleting, onChanged, onBack, onDelete, onRerun }: Props) {
+export function RunView({ runId, activeRunId, deleting, onChanged, onBack, onDelete, onRerun, onEditRerun, rerunBlockedReason }: Props) {
   const [snap, setSnap] = useState<Snapshot>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);
-  const [message, setMessage] = useState<Message | null>(null);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
   const monitorRef = useRef<ReturnType<typeof createRunMonitor> | null>(null);
+  const snapRef = useRef<Snapshot>(EMPTY);
   const kickRef = useRef<() => Promise<boolean>>(async () => false);
   const changedRef = useRef(onChanged);
   useEffect(() => { changedRef.current = onChanged; }, [onChanged]);
@@ -35,7 +56,7 @@ export function RunView({ runId, activeRunId, deleting, onChanged, onBack, onDel
     let latest: Snapshot = EMPTY;
     let tick = 0;
     let stopped = false;
-    const monitor = createRunMonitor(runId, (value) => { latest = value; setSnap(value); });
+    const monitor = createRunMonitor(runId, (value) => { latest = value; snapRef.current = value; setSnap(value); });
     monitorRef.current = monitor;
     const poll = async (): Promise<boolean> => {
       const id = ++tick;
@@ -58,40 +79,76 @@ export function RunView({ runId, activeRunId, deleting, onChanged, onBack, onDel
 
   const entries = useMemo(() => buildHistory(snap.events, runId), [snap.events, runId]);
   const observations = useMemo(() => observationsById(entries), [entries]);
-  const screen = latestObservation(entries);
-  const thinking = latestDecision(entries);
+  const steps = useMemo(() => groupSteps(entries, observations), [entries, observations]);
+  const decision = latestDecision(entries);
+
+  const ended = !run || run.state === 'terminal' || run.interrupted;
+  const question = !ended && run.pending_question && run.pending_question.cancelled_at === null ? run.pending_question : null;
+  const questionOpen = question !== null;
+
+  // Signal an open question in the tab title so it is noticed from another tab.
+  useEffect(() => {
+    if (!questionOpen) return;
+    const previous = document.title;
+    document.title = `${INPUT_NEEDED}${previous}`;
+    return () => { document.title = previous; };
+  }, [questionOpen]);
 
   async function reconnect() {
-    setMessage(null);
+    setFeedback(null);
     const ok = await kickRef.current();
     if (ok) setUncertain(false);
-    else setMessage({ tone: 'error', text: 'Still disconnected. Check that the local service is running, then reconnect again.' });
+    else setFeedback({ tone: 'error', text: 'Still disconnected. Check that the local service is running, then reconnect again.', where: 'header' });
   }
 
-  async function mutate(path: string, body: unknown, success: string) {
-    if (busy || uncertain) return;
-    setBusy(true);
-    setMessage(null);
+  /** One POST, never retried; an uncertain response blocks every further mutation until Reconnect. */
+  async function post(path: string, body?: unknown): Promise<Posted> {
     try {
       const updated = await apiRequest<Run>(`/runs/${encodeURIComponent(runId)}/${path}`, { method: 'POST', body });
       monitorRef.current?.acceptRun(updated);
-      setMessage({ tone: 'info', text: success });
-      void kickRef.current();
+      return { ok: true, run: updated };
     } catch (error) {
-      if (isUncertain(error)) { setUncertain(true); setMessage({ tone: 'error', text: UNCERTAIN }); }
-      else setMessage({ tone: 'error', text: error instanceof ApiError ? error.message : 'The request was not accepted.' });
-      void kickRef.current();
-    } finally {
-      setBusy(false);
+      if (isUncertain(error)) { setUncertain(true); return { ok: false, uncertain: true, text: UNCERTAIN }; }
+      return { ok: false, uncertain: false, text: error instanceof ApiError ? error.message : 'The request was not accepted.' };
     }
   }
 
-  const control = (operation: ControlOperation) => {
+  async function control(operation: ControlOperation, where: Feedback['where'] = 'header') {
+    if (busy || uncertain) return;
     if (operation === 'cancel' && !window.confirm('Cancel this run? The AI will not reach a verdict.')) return;
-    void mutate(operation, undefined, CONFIRMED[operation]);
-  };
-  const answer = (questionId: string, text: string) =>
-    mutate('answers', { question_id: questionId, text }, 'Answer recorded. Select Resume to let the AI continue.');
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const result = await post(operation);
+      setFeedback(result.ok ? { tone: 'info', text: CONFIRMED[operation], where: 'header' } : { tone: 'error', text: result.text, where });
+    } finally {
+      setBusy(false);
+      void kickRef.current();
+    }
+  }
+
+  // Answer first; resume only after the answer is confirmed and the run is resumable.
+  async function answer(questionId: string, text: string) {
+    if (busy || uncertain) return;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const answered = await post('answers', { question_id: questionId, text });
+      if (!answered.ok) { setFeedback({ tone: 'error', text: answered.text, where: 'question' }); return; }
+      const refreshed = await kickRef.current();
+      const latest = refreshed ? snapRef.current.run : null;
+      if (!shouldResumeAfterAnswer(answered.run, latest)) {
+        setFeedback({ tone: 'info', text: answerRecordedText(latest ?? answered.run), where: 'question' });
+        return;
+      }
+      const resumed = await post('resume');
+      if (resumed.ok) setFeedback({ tone: 'info', text: 'Answer recorded and the run resumed. The AI takes a fresh screenshot before any new action.', where: 'header' });
+      else setFeedback({ tone: 'error', text: resumed.uncertain ? resumed.text : `Your answer is recorded, but the run did not resume: ${resumed.text}`, where: 'question' });
+    } finally {
+      setBusy(false);
+      void kickRef.current();
+    }
+  }
 
   if (!run) {
     return (
@@ -108,97 +165,34 @@ export function RunView({ runId, activeRunId, deleting, onChanged, onBack, onDel
     );
   }
 
-  const badge = outcome(run);
   const available = controlAvailability(run, snap.connected, busy, uncertain);
-  const terminal = run.terminal;
-  const observeOnly = Array.isArray(run.configuration?.capabilities) && run.configuration.capabilities.length === 0;
-  const reportBase = `/api/runs/${encodeURIComponent(run.run_id)}`;
-  const usage = parseUsage(run.usage);
-  const cost = runCostText(parseRunCost(run.cost));
+  const links = { run, activeRunId, deleting, onDelete };
+  const questionFeedback = question && feedback?.where === 'question' ? feedback : null;
+  const headerFeedback = feedback && !questionFeedback ? feedback : null;
 
   return (
     <div className="run-view">
-      <section className="panel run-head" aria-labelledby="run-title">
-        <div className="run-title-row">
-          <h1 id="run-title">{run.goal.text}</h1>
-          <div role="status" aria-live="polite" aria-atomic="true" className="run-status">
-            <span className={`badge large ${badge.tone}`}>{badge.label}</span>
-            {run.control_pending && <span className="badge neutral">{run.control_pending === 'pause' ? 'Pausing…' : run.control_pending === 'cancel' ? 'Cancelling…' : 'Resuming…'}</span>}
-          </div>
-        </div>
-        <p className="outcome-text">{outcomeExplanation(run)}</p>
-        {cleanupWarning(run) && <p className="blocked" role="alert">{cleanupWarning(run)}</p>}
-        <div className={`connection-line ${snap.connected ? 'ok' : 'lost'}`} role="status" aria-live="polite">
-          {snap.connected
-            ? <>Updated <time dateTime={snap.checkedAt ? new Date(snap.checkedAt).toISOString() : undefined}>{snap.checkedAt ? new Date(snap.checkedAt).toLocaleTimeString() : ''}</time>{run.state === 'terminal' || run.interrupted ? ' · no further updates expected' : ''}</>
-            : snap.error}
-          <button type="button" className="link" onClick={() => void reconnect()}>{snap.connected ? 'Refresh' : 'Reconnect'}</button>
-        </div>
-        <dl className="facts compact">
-          <div><dt>Device</dt><dd>{run.device_id}</dd></div>
-          <div><dt>Mode</dt><dd>{observeOnly ? 'Observe only' : 'AI may operate the device'}</dd></div>
-          <div><dt>Started</dt><dd><time dateTime={run.created_at}>{formatTime(run.created_at)}</time></dd></div>
-          <div><dt>AI model</dt><dd>{run.configuration?.identity?.model ?? 'unknown'}</dd></div>
-          <div><dt>Input tokens</dt><dd>{usage ? formatTokens(usage.input_tokens) : 'unknown'}</dd></div>
-          <div><dt>Output tokens</dt><dd>{usage ? formatTokens(usage.output_tokens) : 'unknown'}</dd></div>
-          <div><dt>Estimated cost</dt><dd title={cost.title}>{cost.text}</dd></div>
-          <div><dt>Limits</dt><dd>{formatDuration(run.configuration.limits.wall_time_ms)}, {run.configuration.limits.max_actions} actions, {run.configuration.limits.max_inferences} AI steps</dd></div>
-        </dl>
-        {(run.goal.expected_result || run.goal.constraints.length > 0) && (
-          <div className="goal-extra">
-            {run.goal.expected_result && <p><strong>Expected result:</strong> {run.goal.expected_result}</p>}
-            {run.goal.constraints.length > 0 && <><strong>Constraints:</strong><ul>{run.goal.constraints.map((item, i) => <li key={i}>{item}</li>)}</ul></>}
-          </div>
-        )}
-        <div className="report-links">
-          <a href={`${reportBase}/report.html`} target="_blank" rel="noopener noreferrer">Open readable report</a>
-          <a href={`${reportBase}/report.json`} download>Download report data (JSON)</a>
-          <button type="button" className="link" onClick={() => onRerun(run)}
-            title="Open a new run form prefilled with this goal, expected result, constraints, model, mode and limits">Run again with these settings</button>
-          {canDeleteRun(run, activeRunId) && (
-            <button type="button" className="link danger-link" disabled={deleting} onClick={onDelete}>{deleting ? 'Deleting…' : 'Delete this run'}</button>
-          )}
-        </div>
-        {usage && usage.unknown_usage_decisions > 0 && (
-          <p className="help">{usage.unknown_usage_decisions} AI steps did not report token usage and are not counted.</p>
-        )}
-      </section>
+      <RunHeader run={run} step={currentStepNumber(steps)} connected={snap.connected} checkedAt={snap.checkedAt} connectionError={snap.error}
+        available={available} busy={busy} uncertain={uncertain} showResume={!question} message={headerFeedback}
+        onControl={(operation) => void control(operation)} onReconnect={() => void reconnect()} />
 
-      {terminal && (
-        <section className={`panel verdict ${badge.tone}`} aria-labelledby="verdict-title">
-          <h2 id="verdict-title">{terminal.kind === 'ai_conclusion' ? 'AI verdict' : 'How the run ended'}</h2>
-          {terminal.kind === 'ai_conclusion' && (
-            <>
-              <p className="verdict-text">{terminal.assessment.explanation}</p>
-              <p className="help">Screenshots the AI referenced:</p>
-              <div className="thumbs">
-                {terminal.assessment.observation_ids.map((id) => <ObservationThumb key={id} id={id} entry={observations.get(id)} />)}
-              </div>
-            </>
-          )}
-          {terminal.kind === 'infrastructure_failure' && (
-            <>
-              <p>{terminal.detail}</p>
-              <details><summary>Technical details</summary><p>Component: {terminal.component}</p></details>
-            </>
-          )}
-          {terminal.kind === 'cancelled' && <p>Cancelled by: {terminal.source}</p>}
-          {terminal.kind === 'budget_exhausted' && terminal.usage && (
-            <p>Used {formatDuration(terminal.usage.elapsed_ms)}, {terminal.usage.actions} device actions and {terminal.usage.inferences} AI steps.</p>
-          )}
-          <p className="help">Recorded <time dateTime={terminal.recorded_at}>{formatTime(terminal.recorded_at)}</time></p>
-        </section>
+      {question && (
+        <QuestionBlock question={question} canAnswer={available.answer} canResume={available.resume} busy={busy} uncertain={uncertain}
+          message={questionFeedback} onAnswer={(id, text) => void answer(id, text)} onResume={() => void control('resume', 'question')}
+          onReconnect={() => void reconnect()} />
       )}
 
-      <RunControls run={run} available={available} busy={busy} uncertain={uncertain} message={message}
-        onControl={control} onAnswer={answer} onReconnect={() => void reconnect()} />
+      {run.interrupted
+        ? <InterruptedBlock {...links} onEditRerun={onEditRerun} />
+        : run.terminal
+        ? <OutcomeBlock {...links} observations={observations} rerunBlockedReason={rerunBlockedReason} onRerun={onRerun} onEditRerun={onEditRerun} />
+        : <NowBlock decision={decision} source={decision ? observations.get(decision.sourceObservationId) : undefined} />}
 
-      <div className="live-grid">
-        <CurrentScreen run={run} connected={snap.connected} entry={screen} />
-        <LatestThinking entry={thinking} />
-      </div>
+      <StepList steps={steps} observations={observations} ended={ended} />
 
-      <EvidenceHistory entries={entries} observations={observations} />
+      <RunDetails run={run}>
+        {!run.terminal && !run.interrupted && <ReportLinks {...links} />}
+      </RunDetails>
     </div>
   );
 }

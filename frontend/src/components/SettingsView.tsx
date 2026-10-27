@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ApiError, isUncertain } from '../console.ts';
+import type { Readiness } from '../console.ts';
+import type { HealthState } from '../health.ts';
 import { deleteKey, loadSettings, saveSettings, setKey, settingsBody, verifyKey, verifyMessage } from '../settings.ts';
 import type { IosSettings, SettingsView as Settings, VerifyResult } from '../settings.ts';
 
-interface Props { onChanged: () => void }
+interface Props {
+  health: HealthState;
+  readiness: Readiness | null;
+  connected: boolean;
+  onChanged: () => void;
+}
 
 type Message = { text: string; tone: 'error' | 'info' };
 
@@ -25,7 +32,26 @@ function MessageLine({ message }: { message: Message | null }) {
     : <p className="info-text" role="status">{message.text}</p>;
 }
 
-export function SettingsView({ onChanged }: Props) {
+/** Service facts read from health and readiness; neither contacts the device or the AI provider. */
+function ServiceFacts({ health, readiness, connected }: Pick<Props, 'health' | 'readiness' | 'connected'>) {
+  const version = health.kind === 'connected' ? `Version ${health.health.version}` : health.kind === 'checking' ? 'Checking…' : 'Not responding';
+  return (
+    <section className="panel" aria-labelledby="service-title">
+      <h2 id="service-title">Service</h2>
+      {!connected && <p className="muted" role="status">The console cannot reach the local service. The values below are the last known ones.</p>}
+      <dl className="facts compact">
+        <div><dt>Local service</dt><dd>{version}</dd></div>
+        <div><dt>Device automation service</dt><dd>{readiness?.appium_url ?? 'Not set'}</dd></div>
+        <div><dt>AI provider key</dt><dd>{readiness ? (readiness.provider_key_configured ? 'Configured' : 'Missing') : 'Unknown'}</dd></div>
+        <div><dt>Configuration</dt><dd>{readiness ? (readiness.configured ? 'Complete' : 'Incomplete') : 'Unknown'}</dd></div>
+      </dl>
+      {readiness?.configuration_error && <p className="error-text">{readiness.configuration_error}</p>}
+      <p className="fine-print">Read from the service settings only. The device and the AI provider are not contacted; device connectivity is checked when a run starts.</p>
+    </section>
+  );
+}
+
+export function SettingsView({ health, readiness, connected, onChanged }: Props) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [priceRefresh, setPriceRefresh] = useState(true);
@@ -112,9 +138,12 @@ export function SettingsView({ onChanged }: Props) {
 
   if (!settings) {
     return (
-      <section className="panel" aria-labelledby="settings-title">
-        <h1 id="settings-title">Settings</h1>
-        {loadError ? <p className="error-text" role="alert">{loadError}</p> : <p className="muted" role="status">Loading settings…</p>}
+      <section aria-labelledby="settings-title">
+        <div className="panel">
+          <h1 id="settings-title">Settings</h1>
+          {loadError ? <p className="error-text" role="alert">{loadError}</p> : <p className="muted" role="status">Loading settings…</p>}
+        </div>
+        <ServiceFacts health={health} readiness={readiness} connected={connected} />
       </section>
     );
   }
@@ -179,6 +208,8 @@ export function SettingsView({ onChanged }: Props) {
         </div>
         <MessageLine message={saveMessage} />
       </form>
+
+      <ServiceFacts health={health} readiness={readiness} connected={connected} />
     </section>
   );
 }

@@ -58,7 +58,7 @@ export function emptyForm(defaults: Limits): RunForm {
 
 /**
  * Prefills a new form with a stored run's goal, model, mode and limits so the operator can
- * review and start it again. The device is kept only if it is still listed (DeviceSelect
+ * review and start it again. The device is kept only if it is still listed (DeviceChip
  * reconciles it); a model no longer offered falls back to the server default.
  */
 export function formFromRun(run: Run, models: readonly string[], defaults: Limits): RunForm {

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  apiRequest, canCreateRun, controlAvailability, createBlockReason, createRunMonitor, DEFAULT_LIMITS, isUncertain,
-  outcome, parseReadiness, pollDelay, runIdFromHash, safeScreenshotUrl,
+  answerRecordedText, apiRequest, canCreateRun, controlAvailability, createBlockReason, createRunMonitor, DEFAULT_LIMITS, isUncertain,
+  outcome, parseReadiness, pollDelay, runIdFromHash, safeScreenshotUrl, shouldResumeAfterAnswer,
 } from '../src/console.ts';
 
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
@@ -194,4 +194,24 @@ test('token usage parsing rejects malformed counts and only non-owned runs are d
   assert.equal(canDeleteRun(run('running'), 'r1'), false);
   assert.equal(canDeleteRun(run('paused', true), null), true);
   assert.equal(canDeleteRun(run('terminal'), 'r1'), false);
+});
+
+test('resume after an answer follows the refreshed run, and the answer response only when the refresh failed', () => {
+  const resumable = { run_id: 'r1', can_resume: true };
+  const notResumable = { run_id: 'r1', can_resume: false };
+  assert.equal(shouldResumeAfterAnswer(notResumable, resumable), true);
+  assert.equal(shouldResumeAfterAnswer(resumable, notResumable), false);
+  assert.equal(shouldResumeAfterAnswer(resumable, null), true);
+  assert.equal(shouldResumeAfterAnswer(notResumable, null), false);
+});
+
+test('answerRecordedText matches the run state and mentions Resume only when it can be selected', () => {
+  const base = { run_id: 'r1', state: 'waiting_for_user', interrupted: false, can_resume: false, control_pending: null };
+  assert.equal(answerRecordedText({ ...base, state: 'terminal' }), 'Answer recorded; the run has ended.');
+  assert.equal(answerRecordedText({ ...base, state: 'paused', interrupted: true }), 'Answer recorded; the run has ended.');
+  assert.equal(answerRecordedText({ ...base, control_pending: 'cancel' }), 'Answer recorded; the run is being cancelled.');
+  assert.equal(answerRecordedText({ ...base, state: 'running' }), 'Answer recorded; the run is already running.');
+  assert.equal(answerRecordedText({ ...base, state: 'created' }), 'Answer recorded; the run is already running.');
+  assert.equal(answerRecordedText({ ...base, can_resume: true }), 'Answer recorded. Select Resume to let the AI continue.');
+  assert.doesNotMatch(answerRecordedText(base), /Select Resume/);
 });
